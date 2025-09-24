@@ -437,7 +437,6 @@ local function stopAutoMegalodon()
         loopTask = nil
     end
     removePropsPlatform()
-    safeTeleport(bestSpotCFrame)
     activeMode = "BestSpot"
     warn("🛑 Auto Megalodon dimatikan.")
 end
