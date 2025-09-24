@@ -329,6 +329,145 @@ MainTab:CreateToggle({
     end,
 })
 
+--// 📍 Best Spot lokasi default
+local bestSpotCFrame = CFrame.lookAt(
+    Vector3.new(-3764.026, -135.074, -994.416),
+    Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, -8.57e-08, 0.720)
+)
+
+local player = game.Players.LocalPlayer
+
+--// 🎯 Fokus hanya ke Megalodon Hunt
+local function getMegalodonProp()
+    local menuRings = workspace:FindFirstChild("!!! MENU RINGS")
+    if not menuRings then return nil end
+
+    local child19 = menuRings:GetChildren()[19]
+    if not child19 then return nil end
+
+    local target = child19:FindFirstChild("Megalodon Hunt")
+    if target then
+        local part = target:FindFirstChildWhichIsA("BasePart", true)
+        if part then
+            return part.CFrame
+        end
+    end
+    return nil -- ❌ gaada Megalodon
+end
+
+--// 🪵 Platform Props
+local propsPlatform
+local activeMode = "BestSpot" -- default
+local loopTask
+
+local function createPropsPlatform(cframeTarget)
+    if propsPlatform and propsPlatform.Parent then
+        propsPlatform:Destroy()
+    end
+    propsPlatform = Instance.new("Part")
+    propsPlatform.Size = Vector3.new(12, 1, 12)
+    propsPlatform.Anchored = true
+    propsPlatform.CanCollide = true
+    propsPlatform.Transparency = 1
+    propsPlatform.Name = "[RF]PropsPlatform"
+    propsPlatform.CFrame = cframeTarget + Vector3.new(0, 5, 0)
+    propsPlatform.Parent = workspace
+end
+
+local function removePropsPlatform()
+    if propsPlatform and propsPlatform.Parent then
+        propsPlatform:Destroy()
+    end
+    propsPlatform = nil
+end
+
+local function safeTeleport(cframeTarget)
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CFrame = cframeTarget + Vector3.new(0, 20, 0)
+    end
+end
+
+--// 🌀 Start / Stop Loop
+local function startAutoMegalodon()
+    if loopTask then return end -- biar ga dobel
+
+    safeTeleport(bestSpotCFrame)
+    activeMode = "BestSpot"
+
+    loopTask = task.spawn(function()
+        while task.wait(1) do
+            pcall(function()
+                local targetCFrame = getMegalodonProp()
+
+                if targetCFrame then
+                    if activeMode ~= "Megalodon" then
+                        print("🎯 Megalodon muncul → teleport ke Props")
+                        createPropsPlatform(targetCFrame)
+                        safeTeleport(propsPlatform.CFrame)
+                        activeMode = "Megalodon"
+                    else
+                        local char = player.Character
+                        if char and char:FindFirstChild("HumanoidRootPart") then
+                            local hrp = char.HumanoidRootPart
+                            local dist = (hrp.Position - propsPlatform.Position).Magnitude
+                            if dist > 5 then
+                                print("↩️ Balik ke Props (jarak > 25)")
+                                safeTeleport(propsPlatform.CFrame)
+                            end
+                        end
+                    end
+                else
+                    if activeMode ~= "BestSpot" then
+                        print("📍 Megalodon hilang → teleport ke BestSpot")
+                        removePropsPlatform()
+                        safeTeleport(bestSpotCFrame)
+                        activeMode = "BestSpot"
+                    end
+                end
+            end)
+        end
+    end)
+end
+
+local function stopAutoMegalodon()
+    if loopTask then
+        task.cancel(loopTask)
+        loopTask = nil
+    end
+    removePropsPlatform()
+    safeTeleport(bestSpotCFrame)
+    activeMode = "BestSpot"
+    warn("🛑 Auto Megalodon dimatikan.")
+end
+
+--// 🟢 Toggle di Rayfield
+MainTab:CreateToggle({
+    Name = "Auto Megalodon Hunt",
+    CurrentValue = false,
+    Flag = "MegalodonHunt",
+    Callback = function(state)
+        if state then
+            startAutoMegalodon()
+
+            task.wait(3)
+
+            -- ✅ Paksa toggle Auto Fishing ikut nyala
+            if not Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(true)
+            end
+        else
+            stopAutoMegalodon()
+
+            -- 🔴 Matikan Auto Fishing juga
+            if Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(false)
+            end
+        end
+    end,
+})
+
 
 -- =========================================================
 -- Auto Sell
