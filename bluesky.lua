@@ -86,14 +86,16 @@ local function startFishing()
     RequestMiniGameRemote:InvokeServer(40, 1)
 end
 
+-- Thread & koneksi
 local autoFishConn = nil
 local safetyThread = nil
 local spamThread = nil
 
+--// Toggle Rayfield
 MainTab:CreateToggle({
     Name = "Auto Fishing",
     CurrentValue = false,
-    Flag = "AutoFishing",
+    Flag = "AutoFishing", -- penting untuk config autosave
     Callback = function(Value)
         _G.AutoFish = Value
 
@@ -145,9 +147,12 @@ MainTab:CreateToggle({
             end
         end)
 
+        -- ✅ Start pertama
         startFishing()
     end
 })
+
+
 
 -- =========================================================
 -- Reset Character
@@ -181,7 +186,7 @@ MainTab:CreateButton({
     end
 })
 
-local Section = MainTab:CreateSection("Auto Events")
+local Section = MainTab:CreateSection("Auto Events Megalodon, Ghost Worm, Wormhole, Ghost Shark Hunt, Shark Hunt")
 
 --// 📍 Best Spot lokasi default
 local bestSpotCFrame = CFrame.lookAt(
@@ -191,27 +196,26 @@ local bestSpotCFrame = CFrame.lookAt(
 
 local player = game.Players.LocalPlayer
 
---// 🔎 Cari hanya Megalodon Hunt
-local function getMegalodonProp()
+--// 🔎 Cari Props apapun
+local function getAnyProp()
     local menuRings = workspace:FindFirstChild("!!! MENU RINGS")
     if not menuRings then return nil end
     local props = menuRings:FindFirstChild("Props")
     if not props then return nil end
 
-    local target = props:FindFirstChild("Megalodon Hunt")
-    if target then
-        local part = target:FindFirstChildWhichIsA("BasePart", true)
+    for _, child in ipairs(props:GetChildren()) do
+        local part = child:FindFirstChildWhichIsA("BasePart", true)
         if part then
             return part.CFrame
         end
     end
 
-    return nil -- ❌ gaada Megalodon
+    return nil -- ❌ ga ada Props
 end
 
 --// 🪵 Platform Props
 local propsPlatform
-local activeMode = "BestSpot" -- default
+local activeMode = "BestSpot"
 local loopTask
 
 local function createPropsPlatform(cframeTarget)
@@ -245,7 +249,7 @@ local function safeTeleport(cframeTarget)
 end
 
 --// 🌀 Start / Stop Loop
-local function startAutoMegalodon()
+local function startAutoProps()
     if loopTask then return end -- biar ga dobel
 
     -- 📍 Action pertama: selalu ke BestSpot dulu
@@ -255,15 +259,14 @@ local function startAutoMegalodon()
     loopTask = task.spawn(function()
         while task.wait(1) do
             pcall(function()
-                local targetCFrame = getMegalodonProp()
+                local targetCFrame = getAnyProp()
 
                 if targetCFrame then
-                    -- kalau ada Megalodon → teleport ke Props
-                    if activeMode ~= "Megalodon" then
-                        print("🎯 Megalodon muncul → teleport ke Props")
+                    -- kalau ada Props → teleport ke Props
+                    if activeMode ~= "Props" then
                         createPropsPlatform(targetCFrame)
                         safeTeleport(propsPlatform.CFrame)
-                        activeMode = "Megalodon"
+                        activeMode = "Props"
                     else
                         -- kalau sudah di Props → cek jarak
                         local char = player.Character
@@ -271,15 +274,13 @@ local function startAutoMegalodon()
                             local hrp = char.HumanoidRootPart
                             local dist = (hrp.Position - propsPlatform.Position).Magnitude
                             if dist > 25 then
-                                print("↩️ Balik ke Props (jarak > 25)")
                                 safeTeleport(propsPlatform.CFrame)
                             end
                         end
                     end
                 else
-                    -- kalau Megalodon hilang → balik ke BestSpot
+                    -- kalau Props hilang → balik ke BestSpot
                     if activeMode ~= "BestSpot" then
-                        print("📍 Megalodon hilang → teleport ke BestSpot")
                         removePropsPlatform()
                         safeTeleport(bestSpotCFrame)
                         activeMode = "BestSpot"
@@ -290,27 +291,40 @@ local function startAutoMegalodon()
     end)
 end
 
-local function stopAutoMegalodon()
+local function stopAutoProps()
     if loopTask then
         task.cancel(loopTask)
         loopTask = nil
     end
     removePropsPlatform()
-    safeTeleport(bestSpotCFrame) -- 📍 balik ke BestSpot pas dimatiin
     activeMode = "BestSpot"
-    warn("🛑 Auto Megalodon dimatikan.")
+    warn("🛑 Auto Props dimatikan.")
 end
 
 --// 🟢 Toggle di Rayfield
 MainTab:CreateToggle({
-    Name = "Auto Megalodon Hunt",
-    Flag = "MegalodonHunt",
+    Name = "Auto Events",
+    Flag = "AutoProps",
     CurrentValue = false,
     Callback = function(state)
         if state then
-            startAutoMegalodon()
+            -- ✅ Nyalakan Auto Props
+            startAutoProps()
+
+            task.wait(3)
+
+            -- ✅ Paksa toggle Auto Fishing ikut nyala
+            if not Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(true)
+            end
         else
-            stopAutoMegalodon()
+            -- 🔴 Matikan Auto Props
+            stopAutoProps()
+
+            -- 🔴 Matikan Auto Fishing juga
+            if Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(false)
+            end
         end
     end,
 })
@@ -354,9 +368,6 @@ MainTab:CreateInput({
         local num = tonumber(Text)
         if num and num > 0 then
             autoSellDelay = num
-            print("⏳ Auto Sell delay updated to: " .. autoSellDelay .. " seconds")
-        else
-            print("⚠️ Invalid input, please use a number greater than 0")
         end
     end,
 })
