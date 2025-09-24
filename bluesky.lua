@@ -55,6 +55,7 @@ local FishCaughtRemote      = netRoot:WaitForChild("RE/FishCaught")
 local EquipToolRemote       = netRoot:WaitForChild("RE/EquipToolFromHotbar")
 
 local MainTab = Window:CreateTab("Main", "home")
+local TradeTab = Window:CreateTab ("Trade", "arrow-left-right")
 local QuestTab = Window:CreateTab("Quest", "list-checks")
 local ShopTab = Window:CreateTab("Shop", "shopping-cart")
 local TeleportTab = Window:CreateTab("Teleport", "map-pin")
@@ -636,6 +637,155 @@ local Toggle = MainTab:CreateToggle({
             if Rayfield and Rayfield.Notify then
                 Rayfield:Notify({ Title = "Water Walk OFF", Duration = 1 })
             end
+        end
+    end,
+})
+
+-- =========================================================
+-- Trade Fish
+local Section = TradeTab:CreateSection("Auto Trade")
+
+-- Services
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Local
+local LocalPlayer = Players.LocalPlayer
+local Client = require(ReplicatedStorage.Packages.Replion).Client
+local Data = Client:WaitReplion("Data")
+local remote = ReplicatedStorage.Packages["_Index"]["sleitnick_net@0.2.0"].net["RF/InitiateTrade"]
+
+local targetUserId = nil
+local tradingActive = false
+local skipFavorited = true
+
+-- Get player names
+local function getPlayerNames()
+    local names = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        table.insert(names, plr.Name)
+    end
+    return names
+end
+
+-- Dropdown: select target
+local TradeDropdown = TradeTab:CreateDropdown({
+    Name = "Select Trade Target",
+    Options = getPlayerNames(),
+    CurrentOption = {LocalPlayer.Name},
+    Callback = function(selectedName)
+        local chosen = selectedName[1]
+        local targetPlayer = Players:FindFirstChild(chosen)
+        if targetPlayer then
+            targetUserId = targetPlayer.UserId
+            print("Target set to:", chosen, "(" .. targetUserId .. ")")
+        else
+            warn("Player not found:", chosen)
+        end
+    end,
+})
+
+-- Button: refresh dropdown
+TradeTab:CreateButton({
+    Name = "🔄 Refresh Player List",
+    Callback = function()
+        TradeDropdown.Options = getPlayerNames()
+    end,
+})
+
+-- Toggle: skip favorited
+TradeTab:CreateToggle({
+    Name = "Skip Favorited Items",
+    CurrentValue = true,
+    Callback = function(state)
+        skipFavorited = state
+    end,
+})
+
+-- Toggle: auto trade
+TradeTab:CreateToggle({
+    Name = "Auto Trade",
+    CurrentValue = false,
+    Callback = function(state)
+        tradingActive = state
+
+        if tradingActive then
+            if not targetUserId then
+                warn("Select a target before starting!")
+                tradingActive = false
+                -- Notify with Rayfield
+                Rayfield:Notify({
+                    Title = "Error",
+                    Content = "Please select a target before starting Auto Trade!",
+                    Duration = 3,
+                    Image = "triangle-alert"
+                })
+                return
+            end
+
+            -- Teleport to target player
+            local targetPlayer = Players:GetPlayerByUserId(targetUserId)
+            if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(3, 0, 0)
+                end
+            end
+
+            task.spawn(function()
+                while tradingActive do
+                    local rods = Data.Data["Inventory"]["Items"]
+                    local tradedSomething = false
+
+                    for _, rodData in pairs(rods) do
+                        if not tradingActive then break end
+
+                        if rodData.UUID then
+                            -- Debug struktur data
+                            local favoritedValue = rodData.Favorited
+                            if rodData.Metadata and rodData.Metadata.Favorited ~= nil then
+                                favoritedValue = rodData.Metadata.Favorited
+                            end
+
+                            -- Logika trade berdasarkan toggle
+                            local shouldTrade = rodData.UUID and (not skipFavorited or (favoritedValue == nil or favoritedValue == false))
+                            if shouldTrade then
+                                local uuid = rodData.UUID
+                                remote:InvokeServer(targetUserId, uuid)
+                                tradedSomething = true
+                                task.wait(0.1)
+                                Rayfield:Notify({
+                                    Title = "Loading",
+                                    Content = "Processing...",
+                                    Duration = 3,
+                                    Image = "arrow-right-left"
+                                })
+                            else
+                            end
+                        end
+                    end
+
+                    if not tradedSomething then
+                        Rayfield:Notify({
+                            Title = "Success",
+                            Content = "Trading Done",
+                            Duration = 3,
+                            Image = "circle-check-big"
+                        })
+                        tradingActive = false
+                        break
+                    end
+
+                    task.wait(2)
+                end
+            end)
+        else
+            Rayfield:Notify({
+                Title = "Info",
+                Content = "Auto Trade has been stopped",
+                Duration = 3,
+                Image = "circle-off"
+            })
         end
     end,
 })
