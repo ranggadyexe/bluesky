@@ -304,6 +304,7 @@ end
 --// 🟢 Toggle di Rayfield
 MainTab:CreateToggle({
     Name = "Auto Megalodon Hunt",
+    Flag = "MegalodonHunt",
     CurrentValue = false,
     Callback = function(state)
         if state then
