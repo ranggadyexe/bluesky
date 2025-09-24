@@ -183,121 +183,137 @@ MainTab:CreateButton({
 
 local Section = MainTab:CreateSection("Auto Events")
 
---// Services
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
+--// 📍 Best Spot lokasi default
+local bestSpotCFrame = CFrame.lookAt(
+    Vector3.new(-3764.026, -135.074, -994.416),
+    Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, -8.57e-08, 0.720)
+)
 
---// Variabel
-local AutoTPList = {}
+local player = game.Players.LocalPlayer
 
---// Function Freeze Character
-local function FreezeCharacter(state)
-    local char = LocalPlayer.Character
-    if not char then return end
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if humanoid then
-        if state then
-            humanoid.WalkSpeed = 0
-            humanoid.JumpPower = 0
-        else
-            humanoid.WalkSpeed = 16
-            humanoid.JumpPower = 50
+--// 🔎 Cari hanya Megalodon Hunt
+local function getMegalodonProp()
+    local menuRings = workspace:FindFirstChild("!!! MENU RINGS")
+    if not menuRings then return nil end
+    local props = menuRings:FindFirstChild("Props")
+    if not props then return nil end
+
+    local target = props:FindFirstChild("Megalodon Hunt")
+    if target then
+        local part = target:FindFirstChildWhichIsA("BasePart", true)
+        if part then
+            return part.CFrame
         end
+    end
+
+    return nil -- ❌ gaada Megalodon
+end
+
+--// 🪵 Platform Props
+local propsPlatform
+local activeMode = "BestSpot" -- default
+local loopTask
+
+local function createPropsPlatform(cframeTarget)
+    if propsPlatform and propsPlatform.Parent then
+        propsPlatform:Destroy()
+    end
+
+    propsPlatform = Instance.new("Part")
+    propsPlatform.Size = Vector3.new(12, 1, 12)
+    propsPlatform.Anchored = true
+    propsPlatform.CanCollide = true
+    propsPlatform.Transparency = 1
+    propsPlatform.Name = "[RF]PropsPlatform"
+    propsPlatform.CFrame = cframeTarget + Vector3.new(0, 5, 0)
+    propsPlatform.Parent = workspace
+end
+
+local function removePropsPlatform()
+    if propsPlatform and propsPlatform.Parent then
+        propsPlatform:Destroy()
+    end
+    propsPlatform = nil
+end
+
+local function safeTeleport(cframeTarget)
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CFrame = cframeTarget + Vector3.new(0, 25, 0)
     end
 end
 
---// Function untuk ambil posisi target
-local function GetTargetCFrame(target)
-    if not target then return nil end
-    if target:IsA("BasePart") then
-        return target.CFrame
-    elseif target:IsA("Model") then
-        if target.PrimaryPart then
-            return target.PrimaryPart.CFrame
-        else
-            local part = target:FindFirstChildWhichIsA("BasePart")
-            if part then
-                return part.CFrame
-            end
-        end
-    end
-    return nil
-end
+--// 🌀 Start / Stop Loop
+local function startAutoMegalodon()
+    if loopTask then return end -- biar ga dobel
 
---// Modular Creator
-local function CreateAutoTP(toggleName, pathGetter)
-    local data = {
-        Enabled = false,
-        OriginalCFrame = nil,
-        Connection = nil
-    }
+    -- 📍 Action pertama: selalu ke BestSpot dulu
+    safeTeleport(bestSpotCFrame)
+    activeMode = "BestSpot"
 
-    local function Start()
-        data.Connection = RunService.Heartbeat:Connect(function()
-            if not data.Enabled then return end
-            local target = pathGetter()
-            local targetCFrame = GetTargetCFrame(target)
-            if targetCFrame then
-                local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if root then
-                    if not data.OriginalCFrame then
-                        data.OriginalCFrame = root.CFrame
+    loopTask = task.spawn(function()
+        while task.wait(1) do
+            pcall(function()
+                local targetCFrame = getMegalodonProp()
+
+                if targetCFrame then
+                    -- kalau ada Megalodon → teleport ke Props
+                    if activeMode ~= "Megalodon" then
+                        print("🎯 Megalodon muncul → teleport ke Props")
+                        createPropsPlatform(targetCFrame)
+                        safeTeleport(propsPlatform.CFrame)
+                        activeMode = "Megalodon"
+                    else
+                        -- kalau sudah di Props → cek jarak
+                        local char = player.Character
+                        if char and char:FindFirstChild("HumanoidRootPart") then
+                            local hrp = char.HumanoidRootPart
+                            local dist = (hrp.Position - propsPlatform.Position).Magnitude
+                            if dist > 25 then
+                                print("↩️ Balik ke Props (jarak > 25)")
+                                safeTeleport(propsPlatform.CFrame)
+                            end
+                        end
                     end
-                    root.CFrame = targetCFrame + Vector3.new(0, 10, 0)
-                    FreezeCharacter(true)
+                else
+                    -- kalau Megalodon hilang → balik ke BestSpot
+                    if activeMode ~= "BestSpot" then
+                        print("📍 Megalodon hilang → teleport ke BestSpot")
+                        removePropsPlatform()
+                        safeTeleport(bestSpotCFrame)
+                        activeMode = "BestSpot"
+                    end
                 end
-            end
-        end)
-    end
-
-    local function Stop()
-        if data.Connection then
-            data.Connection:Disconnect()
-            data.Connection = nil
+            end)
         end
-        local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if root and data.OriginalCFrame then
-            root.CFrame = data.OriginalCFrame
-        end
-        data.OriginalCFrame = nil
-        FreezeCharacter(false)
-    end
-
-    MainTab:CreateToggle({
-        Name = toggleName,
-        CurrentValue = false,
-        Flag = "AutoTP_" .. toggleName,
-        Callback = function(Value)
-            data.Enabled = Value
-            if Value then
-                Start()
-            else
-                Stop()
-            end
-        end,
-    })
+    end)
 end
 
---// Buat semua toggle
-CreateAutoTP("Auto Megalodon Hunt", function()
-    return workspace["!!! MENU RINGS"].Props:FindFirstChild("Megalodon Hunt")
-end)
+local function stopAutoMegalodon()
+    if loopTask then
+        task.cancel(loopTask)
+        loopTask = nil
+    end
+    removePropsPlatform()
+    safeTeleport(bestSpotCFrame) -- 📍 balik ke BestSpot pas dimatiin
+    activeMode = "BestSpot"
+    warn("🛑 Auto Megalodon dimatikan.")
+end
 
-CreateAutoTP("Auto WormHole", function()
-    local children = workspace["!!! MENU RINGS"]:GetChildren()
-    return children[19] and children[19]:FindFirstChild("Model")
-end)
+--// 🟢 Toggle di Rayfield
+MainTab:CreateToggle({
+    Name = "Auto Megalodon Hunt",
+    CurrentValue = false,
+    Callback = function(state)
+        if state then
+            startAutoMegalodon()
+        else
+            stopAutoMegalodon()
+        end
+    end,
+})
 
-CreateAutoTP("Auto Shark Hunt", function()
-    local children = workspace["!!! MENU RINGS"]:GetChildren()
-    return children[20] and children[20]:FindFirstChild("Shark Hunt")
-end)
-
-CreateAutoTP("Auto Ghost Shark Hunt", function()
-    local children = workspace["!!! MENU RINGS"]:GetChildren()
-    return children[20] and children[20]:FindFirstChild("Ghost Shark Hunt")
-end)
 
 -- =========================================================
 -- Auto Sell
