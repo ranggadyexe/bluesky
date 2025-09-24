@@ -658,6 +658,7 @@ local remote = ReplicatedStorage.Packages["_Index"]["sleitnick_net@0.2.0"].net["
 local targetUserId = nil
 local tradingActive = false
 local skipFavorited = true
+local skipEnchantStone = true
 
 -- Get player names
 local function getPlayerNames()
@@ -699,6 +700,16 @@ TradeTab:CreateToggle({
     CurrentValue = true,
     Callback = function(state)
         skipFavorited = state
+    end,
+})
+
+-- Toggle: skip enchant stone
+TradeTab:CreateToggle({
+    Name = "Skip Enchant Stone",
+    CurrentValue = true,
+    Callback = function(state)
+        skipEnchantStone = state
+        print("Skip Enchant Stone:", state)
     end,
 })
 
@@ -747,8 +758,11 @@ TradeTab:CreateToggle({
                                 favoritedValue = rodData.Metadata.Favorited
                             end
 
-                            -- Logika trade berdasarkan toggle
-                            local shouldTrade = rodData.UUID and (not skipFavorited or (favoritedValue == nil or favoritedValue == false))
+                            -- Logika trade berdasarkan toggle dan skip Id 105, 81
+                            local shouldTrade = rodData.UUID and 
+                                (not skipFavorited or (favoritedValue == nil or favoritedValue == false)) and 
+                                (not skipEnchantStone or (rodData.Id ~= 10 and rodData.Id ~= 125)) and 
+                                (rodData.Id ~= 105 and rodData.Id ~= 81)
                             if shouldTrade then
                                 local uuid = rodData.UUID
                                 remote:InvokeServer(targetUserId, uuid)
@@ -760,7 +774,6 @@ TradeTab:CreateToggle({
                                     Duration = 3,
                                     Image = "arrow-right-left"
                                 })
-                            else
                             end
                         end
                     end
