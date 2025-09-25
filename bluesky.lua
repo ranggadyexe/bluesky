@@ -55,7 +55,7 @@ local FishCaughtRemote      = netRoot:WaitForChild("RE/FishCaught")
 local EquipToolRemote       = netRoot:WaitForChild("RE/EquipToolFromHotbar")
 
 local MainTab = Window:CreateTab("Main", "home")
-local TradeTab = Window:CreateTab ("Trade", "arrow-left-right")
+local AutoTab = Window:CreateTab ("Auto", "repeat")
 local QuestTab = Window:CreateTab("Quest", "list-checks")
 local ShopTab = Window:CreateTab("Shop", "shopping-cart")
 local TeleportTab = Window:CreateTab("Teleport", "map-pin")
@@ -298,7 +298,6 @@ local function stopAutoProps()
     end
     removePropsPlatform()
     activeMode = "BestSpot"
-    warn("🛑 Auto Props dimatikan.")
 end
 
 --// 🟢 Toggle di Rayfield
@@ -452,7 +451,6 @@ local function stopAutoMegalodon()
     end
     removePropsPlatform()
     activeMode = "BestSpot"
-    warn("🛑 Auto Megalodon dimatikan.")
 end
 
 --// 🟢 Toggle di Rayfield
@@ -588,7 +586,6 @@ local function stopAutoModel()
     end
     removeModelPlatform()
     activeModelMode = "BestSpot"
-    warn("🛑 Auto Model dimatikan.")
 end
 
 --// 🟢 Toggle di Rayfield
@@ -845,6 +842,7 @@ end
 MainTab:CreateToggle({
     Name = "Low Graphic Mode (Rejoin to reset)",
     CurrentValue = false,
+    Flag = "LowGraphics",
     Callback = function(state)
         if state then
             warn("✅ Low Graphic Mode ON")
@@ -1033,7 +1031,7 @@ local Toggle = MainTab:CreateToggle({
 
 -- =========================================================
 -- Trade Fish
-local Section = TradeTab:CreateSection("Auto Trade")
+local Section = AutoTab:CreateSection("Auto Trade")
 
 -- Services
 local Players = game:GetService("Players")
@@ -1060,7 +1058,7 @@ local function getPlayerNames()
 end
 
 -- Dropdown: select target
-local TradeDropdown = TradeTab:CreateDropdown({
+local TradeDropdown = AutoTab:CreateDropdown({
     Name = "Select Trade Target",
     Options = getPlayerNames(),
     CurrentOption = {LocalPlayer.Name},
@@ -1077,7 +1075,7 @@ local TradeDropdown = TradeTab:CreateDropdown({
 })
 
 -- Button: refresh dropdown
-TradeTab:CreateButton({
+AutoTab:CreateButton({
     Name = "🔄 Refresh Player List",
     Callback = function()
         TradeDropdown.Options = getPlayerNames()
@@ -1085,7 +1083,7 @@ TradeTab:CreateButton({
 })
 
 -- Toggle: skip favorited
-TradeTab:CreateToggle({
+AutoTab:CreateToggle({
     Name = "Skip Favorited Items",
     CurrentValue = true,
     Callback = function(state)
@@ -1094,7 +1092,7 @@ TradeTab:CreateToggle({
 })
 
 -- Toggle: skip enchant stone
-TradeTab:CreateToggle({
+AutoTab:CreateToggle({
     Name = "Skip Enchant Stone",
     CurrentValue = true,
     Callback = function(state)
@@ -1104,7 +1102,7 @@ TradeTab:CreateToggle({
 })
 
 -- Toggle: auto trade
-TradeTab:CreateToggle({
+AutoTab:CreateToggle({
     Name = "Auto Trade",
     CurrentValue = false,
     Callback = function(state)
@@ -1193,47 +1191,215 @@ TradeTab:CreateToggle({
     end,
 })
 
-local Section = TradeTab:CreateSection("Auto Enchanting Altar")
---[[
+local Section = AutoTab:CreateSection("Auto Enchanting Altar")
+
+-- ambil data inventory rods player
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Client = require(ReplicatedStorage.Packages.Replion).Client
 local Data = Client:WaitReplion("Data")
 
--- Simpan pilihan user
-local SelectedRodUUID = nil
+local rods = Data.Data["Inventory"]["Fishing Rods"]
 
--- Ambil semua rods dari inventory
-local Rods = {}
-for uuid, rodData in pairs(Data.Data["Inventory"]["Fishing Rods"]) do
-    if rodData.Name then
-        table.insert(Rods, {Name = rodData.Name, UUID = uuid})
+-- mapping Id → nama rod
+local RodIdToName = {
+    [1]   = "Starter Rod",
+    [168] = "Angler Rod",
+    [126] = "Ares Rod",
+    [5]   = "Astral Rod",
+    [76]  = "Carbon Rod",
+    [7]   = "Chrome Rod",
+    [77]  = "Demascus Rod",
+    [85]  = "Grass Rod",
+    [78]  = "Ice Rod",
+    [79]  = "Luck Rod",
+    [4]   = "Lucky Rod",
+    [80]  = "Midnight Rod",
+    [6]   = "Steampunk Rod",
+}
+
+-- build list dropdown
+local displayNames = {}
+local indexToUuid = {}
+
+for _, rodData in pairs(rods) do
+    local id = rodData.Id
+    local name = RodIdToName[id] or ("Rod ID " .. tostring(id))
+    local uuid = rodData.UUID or rodData.Uuid or rodData.uuid
+    if uuid then
+        table.insert(displayNames, name)
+        indexToUuid[#displayNames] = uuid
     end
 end
 
--- Buat daftar nama rod (untuk dropdown)
-local RodNames = {}
-for _, rod in ipairs(Rods) do
-    table.insert(RodNames, rod.Name)
-end
+-- variabel hasil pilihan
+SelectedRodUUID = nil
 
--- Dropdown pilih rod
-TradeTab:CreateDropdown({
+-- buat dropdown Rayfield
+AutoTab:CreateDropdown({
     Name = "Select Rod",
-    Options = RodNames,
-    CurrentOption = "",
-    Flag = "RodDropdown",
-    Callback = function(Value)
-        -- Cari UUID berdasarkan nama
-        for _, rod in ipairs(Rods) do
-            if rod.Name == Value then
-                SelectedRodUUID = rod.UUID
-                print("Rod terpilih:", rod.Name, "UUID:", rod.UUID)
+    Options = displayNames,
+    Callback = function(value)
+        -- normalisasi value (Rayfield kadang kirim table)
+        local v = (type(value) == "table" and value[1]) or value
+        for i, name in ipairs(displayNames) do
+            if name == v then
+                SelectedRodUUID = indexToUuid[i]
                 break
             end
         end
-    end,
+        print("[Rod Selected UUID] =>", SelectedRodUUID)
+    end
 })
-]]
+
+
+local StopEnchantToggle = false
+local TargetEnchant = nil
+
+-- ✅ Fixed Enchant List
+local enchantList = {
+    "Big Hunter I", "Cursed I", "Empowered I", "Glistening I", 
+    "Gold Digger I", "Leprechaun I", "Leprechaun II",
+    "Mutation Hunter I", "Mutation Hunter II",
+    "Perfection", "Prismatic I", "Reeler I",
+    "Stargazer I", "Stormhunter I", "Xpercienced I"
+}
+
+-- Dropdown pilih enchant target
+AutoTab:CreateDropdown({
+    Name = "Select Enchant Target",
+    Options = enchantList,
+    CurrentOption = nil,
+    Callback = function(option)
+        TargetEnchant = option
+        print("[EnchantDropdown] 🎯 Enchant target dipilih:", option)
+    end
+})
+
+-- asumsi: ReplicatedStorage, Client, Data, AutoTab, SelectedRodUUID, TargetEnchant sudah ada seperti di scriptmu
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Client = require(ReplicatedStorage.Packages.Replion).Client
+local Data = Client:WaitReplion("Data")
+
+local AutoEnchant = false
+
+-- ambil UUID enchant stone
+local function GetEnchantItemUUID()
+    local items = Data.Data["Inventory"]["Items"]
+    if not items then return nil end
+    for _, itemData in pairs(items) do
+        local id = itemData.Id or itemData.id or itemData.ItemId
+        local uuid = itemData.UUID or itemData.Uuid or itemData.uuid
+        if (id == 10 or id == 125) and uuid then
+            return uuid
+        end
+    end
+    return nil
+end
+
+local Rep = game:GetService("ReplicatedStorage")
+local net = Rep:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net")
+
+local enchantUUID = GetEnchantItemUUID()
+if enchantUUID then
+    print("[Enchant] 🪨 Equip Enchant Stone UUID:", enchantUUID)
+    net:WaitForChild("RE/EquipItem"):FireServer(enchantUUID, "Items")
+
+    -- tunggu sampai tool muncul di character
+    local char = game:GetService("Players").LocalPlayer.Character
+    task.spawn(function()
+        local ok = false
+        for i=1,50 do -- coba 5 detik max
+            task.wait(0.1)
+            for _,tool in ipairs(char:GetChildren()) do
+                if tool:IsA("Tool") and tool:FindFirstChild("UUID") and tool.UUID.Value == enchantUUID then
+                    print("[Enchant] ✅ Tool sudah ada di tangan:", tool.Name)
+                    ok = true
+                    -- baru aktifkan altar
+                    net:WaitForChild("RE/ActivateEnchantingAltar"):FireServer()
+                    return
+                end
+            end
+        end
+        if not ok then
+            warn("[Enchant] ❌ Gagal spawn tool ke tangan")
+        end
+    end)
+else
+    warn("[Enchant] ❌ Tidak ada Enchant Stone di inventory")
+end
+
+local Section = AutoTab:CreateSection("Work in Progress, u should hold Enchant Stone in hand")
+
+-- Toggle Auto Enchant (logika tetap sama)
+AutoTab:CreateToggle({
+    Name = "Auto Enchant",
+    CurrentValue = false,
+    Callback = function(state)
+        AutoEnchant = state
+        if AutoEnchant then
+            
+        local Players = game:GetService("Players")
+        local lp = Players.LocalPlayer
+        local char = lp.Character or lp.CharacterAdded:Wait()
+        local hrp = char:WaitForChild("HumanoidRootPart")
+
+        local altar = workspace:FindFirstChild("! ENCHANTING ALTAR !")
+        if altar and altar:FindFirstChild("EnchantLocation") then
+            hrp.CFrame = altar.EnchantLocation.CFrame + Vector3.new(0, 5, 0)
+        else
+            warn("EnchantLocation tidak ditemukan.")
+        end
+            task.spawn(function()
+                while AutoEnchant do
+                    if not SelectedRodUUID or not TargetEnchant then
+                        warn("[AutoEnchant] SelectedRodUUID atau TargetEnchant belum dipilih. Menghentikan AutoEnchant.")
+                        AutoEnchant = false
+                        break
+                    end
+
+                    local net = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
+                    -- 1. Equip Rod
+                    net["RE/EquipItem"]:FireServer(SelectedRodUUID, "Fishing Rods")
+                    task.wait(0.5)
+
+                    -- 2. Equip Enchant Stone (ambil UUID dari itemData.UUID seperti rod)
+                    local enchantUUID = GetEnchantItemUUID()
+                    if enchantUUID then
+                        net["RE/EquipItem"]:FireServer(enchantUUID, "Items")
+                        print("[Enchant] 🪨 Equip Enchant Stone UUID:", enchantUUID)
+                    else
+                        print("[Enchant] ❌ Tidak ada item ID 10 atau 125 di inventory (UUID tidak ditemukan pada item entry)!")
+                        AutoEnchant = false
+                        break
+                    end
+
+                    task.wait(0.5)
+
+                    -- 3. Activate altar
+                    net["RE/ActivateEnchantingAltar"]:FireServer()
+                    print("[Enchant] 🔮 Enchant dijalankan...")
+
+                    -- 4. Cek hasil enchant
+                    task.wait(2) -- beri waktu update
+                    local rods = Data.Data["Inventory"]["Fishing Rods"]
+                    local rodData = rods and rods[SelectedRodUUID]
+
+                    if rodData and rodData.Metadata and rodData.Metadata.Enchant then
+                        local enchantName = rodData.Metadata.Enchant.Name or "Unknown"
+                        print("[Enchant] Sekarang rod punya:", enchantName)
+                        if enchantName == TargetEnchant then
+                            print("[Enchant] ✅ Target enchant ditemukan! Auto stop.")
+                            AutoEnchant = false
+                            break
+                        end
+                    end
+
+                    task.wait(1)
+                end
+            end)
+        end
+    end
+})
 
 -- =========================================================
 -- Quest Info
