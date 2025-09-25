@@ -75,7 +75,7 @@ local PlayerGui = Player:WaitForChild("PlayerGui")
 --// Fungsi equip rod
 local function equipRod()
     -- sesuaikan argumen sesuai kebutuhan server, kadang "Fishing Rods" / "FishingRod" 
-    EquipRodRemote:FireServer()  
+    EquipToolRemote:FireServer()  
 end
 
 --// Fungsi start fishing
@@ -311,7 +311,7 @@ MainTab:CreateToggle({
             -- ✅ Nyalakan Auto Props
             startAutoProps()
 
-            task.wait(3)
+            task.wait(5)
 
             -- ✅ Paksa toggle Auto Fishing ikut nyala
             if not Rayfield.Flags["AutoFishing"].CurrentValue then
@@ -339,20 +339,36 @@ local player = game.Players.LocalPlayer
 
 --// 🎯 Fokus hanya ke Megalodon Hunt
 local function getMegalodonProp()
-    local menuRings = workspace:FindFirstChild("!!! MENU RINGS")
-    if not menuRings then return nil end
+    local menuRings = workspace:FindFirstChild("!!! MENU RINGS") 
+    if not menuRings then 
+        return nil 
+    end
 
-    local child19 = menuRings:GetChildren()[19]
-    if not child19 then return nil end
-
-    local target = child19:FindFirstChild("Megalodon Hunt")
-    if target then
-        local part = target:FindFirstChildWhichIsA("BasePart", true)
-        if part then
-            return part.CFrame
+    -- 🔹 Cek jalur Props langsung
+    local props = menuRings:FindFirstChild("Props")
+    if props then
+        local target = props:FindFirstChild("Megalodon Hunt")
+        if target then
+            local part = target:FindFirstChildWhichIsA("BasePart", true)
+            if part then
+                return part.CFrame
+            end
         end
     end
-    return nil -- ❌ gaada Megalodon
+
+    -- 🔹 Fallback ke children index 19
+    local child19 = menuRings:GetChildren()[19]
+    if child19 then
+        local target = child19:FindFirstChild("Megalodon Hunt")
+        if target then
+            local part = target:FindFirstChildWhichIsA("BasePart", true)
+            if part then
+                return part.CFrame
+            end
+        end
+    end
+
+    return nil -- ❌ Tidak ada Megalodon Hunt
 end
 
 --// 🪵 Platform Props
@@ -403,7 +419,6 @@ local function startAutoMegalodon()
 
                 if targetCFrame then
                     if activeMode ~= "Megalodon" then
-                        print("🎯 Megalodon muncul → teleport ke Props")
                         createPropsPlatform(targetCFrame)
                         safeTeleport(propsPlatform.CFrame)
                         activeMode = "Megalodon"
@@ -412,8 +427,7 @@ local function startAutoMegalodon()
                         if char and char:FindFirstChild("HumanoidRootPart") then
                             local hrp = char.HumanoidRootPart
                             local dist = (hrp.Position - propsPlatform.Position).Magnitude
-                            if dist > 5 then
-                                print("↩️ Balik ke Props (jarak > 25)")
+                            if dist > 10 then
                                 safeTeleport(propsPlatform.CFrame)
                             end
                         end
@@ -450,7 +464,7 @@ MainTab:CreateToggle({
         if state then
             startAutoMegalodon()
 
-            task.wait(3)
+            task.wait(5)
 
             -- ✅ Paksa toggle Auto Fishing ikut nyala
             if not Rayfield.Flags["AutoFishing"].CurrentValue then
@@ -665,6 +679,70 @@ MainTab:CreateToggle({
        end
    end,
 })
+
+local function disableAllVFX()
+    local containers = {
+        workspace,
+        game:GetService("Lighting"),
+        game:GetService("ReplicatedStorage"),
+        game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+    }
+
+    for _, container in ipairs(containers) do
+        for _, obj in ipairs(container:GetDescendants()) do
+            if obj:IsA("ParticleEmitter")
+            or obj:IsA("Trail")
+            or obj:IsA("Beam")
+            or obj:IsA("Fire")
+            or obj:IsA("Smoke")
+            or obj:IsA("Sparkles") then
+                obj.Enabled = false
+            end
+        end
+    end
+end
+
+--// 🟢 Toggle Low Graphic Mode
+MainTab:CreateToggle({
+    Name = "Low Graphic Mode (Rejoin to reset)",
+    CurrentValue = false,
+    Callback = function(state)
+        if state then
+            warn("✅ Low Graphic Mode ON")
+
+            -- 🔅 Atur Lighting
+            local lighting = game:GetService("Lighting")
+            lighting.GlobalShadows = false
+            lighting.Brightness = 1
+            lighting.FogEnd = 1e6
+            lighting.FogStart = 0
+            lighting.EnvironmentSpecularScale = 0
+            lighting.EnvironmentDiffuseScale = 0
+            lighting.Ambient = Color3.new(1, 1, 1)
+            lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+
+            -- 💨 Matikan semua VFX
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj.Enabled = false
+                end
+            end
+
+            -- 🧱 Jadikan semua part jadi Plastic
+            for _, part in ipairs(workspace:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Material = Enum.Material.Plastic
+                end
+            end
+
+            disableAllVFX()
+
+        else
+            warn("🛑 Low Graphic Mode OFF (rejoin for restore)")
+        end
+    end,
+})
+
 
 --// 🌊 Water Walk
 local Players = game:GetService("Players")
@@ -968,6 +1046,48 @@ TradeTab:CreateToggle({
         end
     end,
 })
+
+local Section = TradeTab:CreateSection("Auto Enchanting Altar")
+--[[
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Client = require(ReplicatedStorage.Packages.Replion).Client
+local Data = Client:WaitReplion("Data")
+
+-- Simpan pilihan user
+local SelectedRodUUID = nil
+
+-- Ambil semua rods dari inventory
+local Rods = {}
+for uuid, rodData in pairs(Data.Data["Inventory"]["Fishing Rods"]) do
+    if rodData.Name then
+        table.insert(Rods, {Name = rodData.Name, UUID = uuid})
+    end
+end
+
+-- Buat daftar nama rod (untuk dropdown)
+local RodNames = {}
+for _, rod in ipairs(Rods) do
+    table.insert(RodNames, rod.Name)
+end
+
+-- Dropdown pilih rod
+TradeTab:CreateDropdown({
+    Name = "Select Rod",
+    Options = RodNames,
+    CurrentOption = "",
+    Flag = "RodDropdown",
+    Callback = function(Value)
+        -- Cari UUID berdasarkan nama
+        for _, rod in ipairs(Rods) do
+            if rod.Name == Value then
+                SelectedRodUUID = rod.UUID
+                print("Rod terpilih:", rod.Name, "UUID:", rod.UUID)
+                break
+            end
+        end
+    end,
+})
+]]
 
 -- =========================================================
 -- Quest Info
@@ -1532,7 +1652,6 @@ local TextBox = ShopTab:CreateInput({
         local interval = tonumber(value)
         if not interval or interval <= 0 then
             TextBox:Set("300")
-            print("Invalid interval, using default 300 seconds (5 minutes).")
         end
     end,
 })
