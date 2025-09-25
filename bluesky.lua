@@ -427,7 +427,7 @@ local function startAutoMegalodon()
                         if char and char:FindFirstChild("HumanoidRootPart") then
                             local hrp = char.HumanoidRootPart
                             local dist = (hrp.Position - propsPlatform.Position).Magnitude
-                            if dist > 10 then
+                            if dist > 20 then
                                 safeTeleport(propsPlatform.CFrame)
                             end
                         end
