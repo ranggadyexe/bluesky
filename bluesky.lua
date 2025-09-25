@@ -482,6 +482,140 @@ MainTab:CreateToggle({
 })
 
 
+--// 🎯 Ambil Model dari MENU RINGS
+local function getMenuRingsModel()
+    local menuRings = workspace:FindFirstChild("!!! MENU RINGS")
+    if not menuRings then return nil end
+
+    -- 🔹 Coba jalur Props.Model
+    local props = menuRings:FindFirstChild("Props")
+    if props and props:FindFirstChild("Model") then
+        local part = props.Model:FindFirstChildWhichIsA("BasePart", true)
+        if part then
+            return part.CFrame
+        end
+    end
+
+    -- 🔹 Coba jalur GetChildren()[20].Model
+    local child20 = menuRings:GetChildren()[20]
+    if child20 and child20:FindFirstChild("Model") then
+        local part = child20.Model:FindFirstChildWhichIsA("BasePart", true)
+        if part then
+            return part.CFrame
+        end
+    end
+
+    return nil -- ❌ Model tidak ditemukan
+end
+
+--// 🪵 Platform Props
+local modelPlatform
+local activeModelMode = "BestSpot"
+local loopModelTask
+
+local function createModelPlatform(cframeTarget)
+    if modelPlatform and modelPlatform.Parent then
+        modelPlatform:Destroy()
+    end
+    modelPlatform = Instance.new("Part")
+    modelPlatform.Size = Vector3.new(12, 1, 12)
+    modelPlatform.Anchored = true
+    modelPlatform.CanCollide = true
+    modelPlatform.Transparency = 1
+    modelPlatform.Name = "[RF]ModelPlatform"
+    modelPlatform.CFrame = cframeTarget + Vector3.new(0, 5, 0)
+    modelPlatform.Parent = workspace
+end
+
+local function removeModelPlatform()
+    if modelPlatform and modelPlatform.Parent then
+        modelPlatform:Destroy()
+    end
+    modelPlatform = nil
+end
+
+local function safeTeleportModel(cframeTarget)
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CFrame = cframeTarget + Vector3.new(0, 20, 0)
+    end
+end
+
+--// 🌀 Start / Stop Loop
+local function startAutoModel()
+    if loopModelTask then return end -- biar ga dobel
+
+    safeTeleportModel(bestSpotCFrame)
+    activeModelMode = "BestSpot"
+
+    loopModelTask = task.spawn(function()
+        while task.wait(1) do
+            pcall(function()
+                local targetCFrame = getMenuRingsModel()
+
+                if targetCFrame then
+                    if activeModelMode ~= "Model" then
+                        createModelPlatform(targetCFrame)
+                        safeTeleportModel(modelPlatform.CFrame)
+                        activeModelMode = "Model"
+                    else
+                        local char = player.Character
+                        if char and char:FindFirstChild("HumanoidRootPart") then
+                            local hrp = char.HumanoidRootPart
+                            local dist = (hrp.Position - modelPlatform.Position).Magnitude
+                            if dist > 20 then
+                                safeTeleportModel(modelPlatform.CFrame)
+                            end
+                        end
+                    end
+                else
+                    if activeModelMode ~= "BestSpot" then
+                        removeModelPlatform()
+                        safeTeleportModel(bestSpotCFrame)
+                        activeModelMode = "BestSpot"
+                    end
+                end
+            end)
+        end
+    end)
+end
+
+local function stopAutoModel()
+    if loopModelTask then
+        task.cancel(loopModelTask)
+        loopModelTask = nil
+    end
+    removeModelPlatform()
+    activeModelMode = "BestSpot"
+    warn("🛑 Auto Model dimatikan.")
+end
+
+--// 🟢 Toggle di Rayfield
+MainTab:CreateToggle({
+    Name = "Auto Worm Ghost or Wormhole Hunt",
+    CurrentValue = false,
+    Flag = "MenuRingsModel",
+    Callback = function(state)
+        if state then
+            startAutoModel()
+
+            task.wait(5)
+
+            -- ✅ Paksa toggle Auto Fishing ikut nyala
+            if not Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(true)
+            end
+        else
+            stopAutoModel()
+            -- 🔴 Matikan Auto Fishing juga
+            if Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(false)
+            end
+        end
+    end,
+})
+
 -- =========================================================
 -- Auto Sell
 
@@ -680,25 +814,30 @@ MainTab:CreateToggle({
    end,
 })
 
-local function disableAllVFX()
-    local containers = {
-        workspace,
-        game:GetService("Lighting"),
-        game:GetService("ReplicatedStorage"),
-        game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-    }
+--// 🔻 Disable VFX on new objects
+local function disableVFX(obj)
+    if obj:IsA("ParticleEmitter")
+    or obj:IsA("Trail")
+    or obj:IsA("Beam")
+    or obj:IsA("Fire")
+    or obj:IsA("Smoke")
+    or obj:IsA("Sparkles") then
+        obj.Enabled = false
+    end
+end
 
-    for _, container in ipairs(containers) do
-        for _, obj in ipairs(container:GetDescendants()) do
-            if obj:IsA("ParticleEmitter")
-            or obj:IsA("Trail")
-            or obj:IsA("Beam")
-            or obj:IsA("Fire")
-            or obj:IsA("Smoke")
-            or obj:IsA("Sparkles") then
-                obj.Enabled = false
-            end
-        end
+--// 🔻 Convert parts to Plastic
+local function simplifyPart(obj)
+    if obj:IsA("BasePart") then
+        obj.Material = Enum.Material.Plastic
+    end
+end
+
+--// 🔻 Apply low graphics recursively
+local function applyLowGraphics(container)
+    for _, obj in ipairs(container:GetDescendants()) do
+        disableVFX(obj)
+        simplifyPart(obj)
     end
 end
 
@@ -721,24 +860,31 @@ MainTab:CreateToggle({
             lighting.Ambient = Color3.new(1, 1, 1)
             lighting.OutdoorAmbient = Color3.new(1, 1, 1)
 
-            -- 💨 Matikan semua VFX
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
-                    obj.Enabled = false
-                end
+            -- 🔨 Destroy semua VFX di ReplicatedStorage
+            local rs = game:GetService("ReplicatedStorage")
+            if rs:FindFirstChild("VFX") then
+                rs.VFX:ClearAllChildren()
+                print("🗑️ Cleared ReplicatedStorage.VFX")
             end
 
-            -- 🧱 Jadikan semua part jadi Plastic
-            for _, part in ipairs(workspace:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.Material = Enum.Material.Plastic
-                end
+            -- 🌍 Apply ke semua container
+            local containers = {
+                workspace,
+                lighting,
+                rs,
+                game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+            }
+            for _, c in ipairs(containers) do
+                applyLowGraphics(c)
+
+                -- listen jika ada object baru masuk
+                c.DescendantAdded:Connect(function(obj)
+                    disableVFX(obj)
+                    simplifyPart(obj)
+                end)
             end
-
-            disableAllVFX()
-
         else
-            warn("🛑 Low Graphic Mode OFF (rejoin for restore)")
+            warn("🛑 Low Graphic Mode OFF (rejoin to restore)")
         end
     end,
 })
