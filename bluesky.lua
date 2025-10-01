@@ -41,6 +41,14 @@ local Window = Rayfield:CreateWindow({
    }
 })
 
+
+local MainTab = Window:CreateTab("Main", "home")
+local AutoTab = Window:CreateTab ("Auto", "repeat")
+local QuestTab = Window:CreateTab("Quest", "list-checks")
+local ShopTab = Window:CreateTab("Shop", "shopping-cart")
+local TeleportTab = Window:CreateTab("Teleport", "map-pin")
+local ConfigTab = Window:CreateTab("Config", "cog")
+
 --// ⚡ Remote references
 local netRoot = game:GetService("ReplicatedStorage")
     :WaitForChild("Packages")
@@ -54,63 +62,52 @@ local FishingCompleteRemote = netRoot:WaitForChild("RE/FishingCompleted")
 local FishCaughtRemote      = netRoot:WaitForChild("RE/FishCaught")
 local EquipToolRemote       = netRoot:WaitForChild("RE/EquipToolFromHotbar")
 
-local MainTab = Window:CreateTab("Main", "home")
-local AutoTab = Window:CreateTab ("Auto", "repeat")
-local QuestTab = Window:CreateTab("Quest", "list-checks")
-local ShopTab = Window:CreateTab("Shop", "shopping-cart")
-local TeleportTab = Window:CreateTab("Teleport", "map-pin")
-local ConfigTab = Window:CreateTab("Config", "cog")
-
-
+--// UI Section
 local Section = MainTab:CreateSection("🎣 Auto Fishing")
 
--- =========================================================
--- 🎣 Auto Fishing Spam Complete
-
+--// Player refs
 local Player = game.Players.LocalPlayer
 local Character = Player.Character or Player.CharacterAdded:Wait()
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-local PlayerGui = Player:WaitForChild("PlayerGui")
 
 --// Fungsi equip rod
 local function equipRod()
-    -- sesuaikan argumen sesuai kebutuhan server, kadang "Fishing Rods" / "FishingRod" 
-    EquipToolRemote:FireServer()  
+    pcall(function()
+        EquipToolRemote:FireServer(1) -- slot 1, sesuaikan kalau beda
+    end)
 end
 
 --// Fungsi start fishing
 local function startFishing()
-    -- 🔋 charge
-    ChargeRodRemote:InvokeServer(tick())
-    -- 🎮 request minigame
-    RequestMiniGameRemote:InvokeServer(40, 1)
+    pcall(function()
+        ChargeRodRemote:InvokeServer(tick())
+        RequestMiniGameRemote:InvokeServer(40, 1)
+    end)
 end
 
--- Thread & koneksi
-local autoFishConn = nil
-local safetyThread = nil
-local spamThread = nil
+-- State
+local autoFishConn
+local spamThread
+local safetyThread
+local lastCatch = tick()
 
---// Toggle Rayfield
+--// Toggle
 MainTab:CreateToggle({
     Name = "Auto Fishing",
     CurrentValue = false,
-    Flag = "AutoFishing", -- penting untuk config autosave
+    Flag = "AutoFishing",
     Callback = function(Value)
         _G.AutoFish = Value
 
         if not Value then
-            -- 🔴 Matikan semua thread + koneksi
+            -- 🔴 Matikan semua koneksi & thread
             if autoFishConn then autoFishConn:Disconnect() autoFishConn = nil end
             if spamThread then task.cancel(spamThread) spamThread = nil end
             if safetyThread then task.cancel(safetyThread) safetyThread = nil end
             return
         end
 
-        -- ✅ Equip Rod dulu (slot 1)
-        pcall(function()
-            EquipToolRemote:FireServer(1)
-        end)
+        -- ✅ Equip rod dulu
+        equipRod()
         task.wait(0.5)
 
         -- ✅ Spam FishingCompleteRemote
@@ -123,27 +120,28 @@ MainTab:CreateToggle({
             end
         end)
 
-        -- ✅ Kalau ada ikan → lanjut startFishing()
-        autoFishConn = FishCaughtRemote.OnClientEvent:Connect(function(...)
+        -- ✅ Event listener sekali aja
+        autoFishConn = FishCaughtRemote.OnClientEvent:Connect(function()
+            lastCatch = tick()
             if _G.AutoFish then
                 task.wait(0.2)
                 startFishing()
             end
         end)
 
-        -- ✅ Safety loop → kalau 10 detik nggak ada ikan, paksa start ulang
+        -- ✅ Safety loop → cek tiap 10 detik
         safetyThread = task.spawn(function()
-            local lastCatch = tick()
-            FishCaughtRemote.OnClientEvent:Connect(function()
-                lastCatch = tick()
-            end)
-
             while _G.AutoFish do
+                -- kalau rod ilang, equip ulang
+                if not (Player.Character and Player.Character:FindFirstChild("Fishing Rod")) then
+                    equipRod()
+                end
+                -- kalau udah >10 detik tanpa ikan, restart fishing
                 if tick() - lastCatch > 10 then
                     startFishing()
                     lastCatch = tick()
                 end
-                task.wait(1)
+                task.wait(10) -- cek berkala tiap 10 detik
             end
         end)
 
@@ -151,6 +149,7 @@ MainTab:CreateToggle({
         startFishing()
     end
 })
+
 
 
 
@@ -793,18 +792,6 @@ MainTab:CreateToggle({
 
            local textNotif = playerGui:FindFirstChild("Text Notifications")
            if textNotif then textNotif:Destroy() end
-
-           Rayfield:Notify({
-               Title = "GUI Removed",
-               Content = "Default notifications have been destroyed.",
-               Duration = 3
-           })
-       else
-           Rayfield:Notify({
-               Title = "GUI Already Removed",
-               Content = "Default GUI cannot be restored once destroyed.",
-               Duration = 3
-           })
        end
    end,
 })
@@ -843,7 +830,6 @@ MainTab:CreateToggle({
     Flag = "LowGraphics",
     Callback = function(state)
         if state then
-            warn("✅ Low Graphic Mode ON")
 
             -- 🔅 Atur Lighting
             local lighting = game:GetService("Lighting")
@@ -860,7 +846,6 @@ MainTab:CreateToggle({
             local rs = game:GetService("ReplicatedStorage")
             if rs:FindFirstChild("VFX") then
                 rs.VFX:ClearAllChildren()
-                print("🗑️ Cleared ReplicatedStorage.VFX")
             end
 
             -- 🌍 Apply ke semua container
@@ -880,7 +865,6 @@ MainTab:CreateToggle({
                 end)
             end
         else
-            warn("🛑 Low Graphic Mode OFF (rejoin to restore)")
         end
     end,
 })
@@ -999,8 +983,6 @@ local function startWaterWalk(character)
             waterPlatform.CanCollide = false
         end
     end)
-
-    print("✅ Water Walk aktif!")
 end
 
 -- Toggle Water Walk
@@ -1013,16 +995,10 @@ local Toggle = MainTab:CreateToggle({
 
         if state then
             startWaterWalk(character)
-            if Rayfield and Rayfield.Notify then
-                Rayfield:Notify({ Title = "Water Walk ON", Duration = 1 })
-            end
         else
             if runConn then runConn:Disconnect(); runConn = nil end
             if waterPlatform and waterPlatform.Parent then waterPlatform:Destroy() end
             waterPlatform = nil
-            if Rayfield and Rayfield.Notify then
-                Rayfield:Notify({ Title = "Water Walk OFF", Duration = 1 })
-            end
         end
     end,
 })
@@ -1219,6 +1195,110 @@ AutoTab:CreateToggle({
     end,
 })
 
+-- =========================================================
+local Section = AutoTab:CreateSection("Auto Favorited Rarity")
+local RS = game:GetService("ReplicatedStorage")
+local Client = require(RS.Packages.Replion).Client
+local Data = Client:WaitReplion("Data")
+local ItemUtility = require(RS.Shared.ItemUtility)
+
+-- Remote untuk favorite
+local RemoteFavorite = RS.Packages._Index["sleitnick_net@0.2.0"].net["RE/FavoriteItem"]
+
+-- Mapping Tier -> Rarity (1-7)
+local RarityByTier = {
+    [1] = "Common",
+    [2] = "Uncommon",
+    [3] = "Rare",
+    [4] = "Epic",
+    [5] = "Legendary",
+    [6] = "Mythic",
+    [7] = "Secret",
+}
+
+-- State
+local autoFavEnabled = false
+local selectedRarities = {}
+
+-- Dropdown Rayfield
+AutoTab:CreateDropdown({
+    Name = "Select Fish Rarities",
+    Options = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Secret"},
+    CurrentOption = {"Mythic", "Secret"},
+    Flag = "FavRarities",
+    MultipleOptions = true,
+    Callback = function(opts)
+        selectedRarities = opts
+    end,
+})
+
+-- Toggle Rayfield
+AutoTab:CreateToggle({
+    Name = "Enable Auto-Favorite",
+    CurrentValue = false,
+    Flag = "AutoFavToggle",
+    Callback = function(value)
+        autoFavEnabled = value
+    end,
+})
+
+AutoTab:CreateButton({
+    Name = "Unfavorite All Fishes",
+    Callback = function()
+        local items = Data.Data["Inventory"]["Items"]
+        local unfavCount = 0
+
+        for _, info in pairs(items) do
+            if typeof(info) == "table" and info.Id and info.Favorited == true then
+                local ok, meta = pcall(function()
+                    return ItemUtility.GetItemDataFromItemType("Fishes", info.Id)
+                end)
+
+                if ok and meta and meta.Data and meta.Data.Type == "Fishes" then
+                    -- toggle unfavorite
+                    RemoteFavorite:FireServer(info.UUID)
+                    unfavCount = unfavCount + 1
+                end
+            end
+        end
+
+        Rayfield:Notify({
+            Title = "Unfavorite Complete",
+            Content = "Successfully unfavorited " .. tostring(unfavCount) .. " fishes.",
+            Image = "fish-off",
+            Duration = 4
+        })
+    end,
+})
+
+
+-- Loop cek inventory
+task.spawn(function()
+    while true do
+        if autoFavEnabled then
+            local items = Data.Data["Inventory"]["Items"]
+
+            for _, info in pairs(items) do
+                if typeof(info) == "table" and info.Id then
+                    local ok, meta = pcall(function()
+                        return ItemUtility.GetItemDataFromItemType("Fishes", info.Id)
+                    end)
+
+                    if ok and meta and meta.Data and meta.Data.Type == "Fishes" then
+                        local rarity = RarityByTier[meta.Data.Tier or 1] or "Unknown"
+
+                        -- hanya favoritkan kalau rarity cocok DAN belum favorit
+                        if table.find(selectedRarities, rarity) and not info.Favorited then
+                            RemoteFavorite:FireServer(info.UUID)
+                            print("Favorited:", meta.Data.Name, rarity, "UUID:", info.UUID)
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.1) -- cek tiap 1 detik
+    end
+end)
 
 
 -- =========================================================
@@ -1302,11 +1382,6 @@ AutoTab:CreateToggle({
         end
     end,
 })
-
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local NetFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
-local Client = require(ReplicatedStorage.Packages.Replion).Client
-local Data = Client:WaitReplion("Data")
 
 -- daftar bait urut murah → mahal
 local BaitPriority = {
@@ -1702,6 +1777,81 @@ local Button = ShopTab:CreateButton({
     end,
 })
 
+local Section = ShopTab:CreateSection("Buy Traveling Merchant")
+
+local RF = game:GetService("ReplicatedStorage")
+    :WaitForChild("Packages")
+    :WaitForChild("_Index")
+    :WaitForChild("sleitnick_net@0.2.0")
+    :WaitForChild("net")
+    :WaitForChild("RF/PurchaseMarketItem")
+
+-- Mapping nama item -> ID server
+local ItemPurchaseIds = {
+    ["Luck Totem 2M Coins"]       = 5,
+    ["Royal Bait 425K Coins"]     = 4,
+    ["Singularity Bait 8.2M Coins"] = 3,
+    ["Hazmat Rod 1.38M Coins"]    = 2,
+    ["Fluorescent Rod 685K Coins"]= 1,
+}
+
+local selectedId = nil
+
+-- Dropdown pilih item
+ShopTab:CreateDropdown({
+    Name = "Select Merchant Item",
+    Options = {
+        "Luck Totem 2M Coins",
+        "Royal Bait 425K Coins",
+        "Singularity Bait 8.2M Coins",
+        "Hazmat Rod 1.38M Coins",
+        "Fluorescent Rod 685K Coins"
+    },
+    CurrentOption = { "Select item" },
+    MultipleOptions = false,
+    Callback = function(opt)
+        local choice = type(opt) == "table" and opt[1] or opt
+        selectedId = ItemPurchaseIds[choice]
+    end,
+})
+
+-- Button buy item yang dipilih
+ShopTab:CreateButton({
+    Name = "Buy Selected Item",
+    Callback = function()
+        if not selectedId then
+            Rayfield:Notify({
+                Title = "Purchase Failed",
+                Content = "Please select an item first.",
+                Image = "circle-x",
+                Duration = 3
+            })
+            return
+        end
+
+        local ok, res = pcall(function()
+            return RF:InvokeServer(selectedId)
+        end)
+
+        if ok and res then
+            Rayfield:Notify({
+                Title = "Purchase Successful",
+                Content = "You have successfully purchased the item.",
+                Image = "shopping-cart",
+                Duration = 3
+            })
+        else
+            Rayfield:Notify({
+                Title = "Purchase Failed",
+                Content = "Item is not available in merchant or you do not have enough currency.",
+                Image = "circle-x",
+                Duration = 4
+            })
+        end
+    end,
+})
+
+
 local Section = ShopTab:CreateSection("Buy Boat")
 
 --// Data Boats
@@ -1976,12 +2126,10 @@ local Toggle = ShopTab:CreateToggle({
     Flag = "AutoWeatherLoop",
     Callback = function(state)
         if state then
-            print("Auto Buy Loop Started")
             autoLoopRunning = true
             spawn(function()
                 while autoLoopRunning do
                     local validOptions = getValidOptions()
-                    print("Valid options:", table.concat(validOptions, ", "))
                     if #validOptions > 0 then
                         buyWeather(validOptions)
                     else
@@ -1990,7 +2138,6 @@ local Toggle = ShopTab:CreateToggle({
                             Content = "No weather events selected.",
                             Duration = 3,
                         })
-                        print("Loop stopped due to no valid options")
                         autoLoopRunning = false
                         Toggle:Set(false)
                         break
@@ -1999,10 +2146,8 @@ local Toggle = ShopTab:CreateToggle({
                     local interval = tonumber(TextBox.CurrentValue) or 300
                     wait(interval)
                 end
-                print("Auto Buy Loop Stopped")
             end)
         else
-            print("Auto Buy Loop Stopped by user")
             autoLoopRunning = false
         end
     end,
@@ -2141,7 +2286,7 @@ local Button = TeleportTab:CreateButton({
     end,
 })
 
-local Section = TeleportTab:CreateSection("Teleport to Altar")
+local Section = TeleportTab:CreateSection("Teleport to ???")
 
 --// Referensi ke lokasi EnchantLocation
 local enchantLocation = workspace:WaitForChild("! ENCHANTING ALTAR !"):WaitForChild("EnchantLocation")
@@ -2183,6 +2328,76 @@ local Button = TeleportTab:CreateButton({
             Rayfield:Notify({
                 Title = "Error",
                 Content = "Location not found: Enchanting Altar",
+                Image = "map-pin",
+                Duration = 3,
+            })
+        end
+    end,
+})
+
+--======Traveling Merchant=======--
+local NPCs = ReplicatedStorage:WaitForChild("NPC")
+
+-- Ambil NPC Alien Merchant
+local AlienMerchant = NPCs:WaitForChild("Alien Merchant")
+
+-- kalau model, set PrimaryPart
+if AlienMerchant:IsA("Model") and not AlienMerchant.PrimaryPart then
+    AlienMerchant.PrimaryPart = AlienMerchant:FindFirstChildWhichIsA("BasePart")
+end
+
+-- // Button
+TeleportTab:CreateButton({
+    Name = "Teleport ke Alien Merchant",
+    Callback = function()
+        if not AlienMerchant then
+            Rayfield:Notify({
+                Title = "Error",
+                Content = "NPC Alien Merchant tidak ditemukan!",
+                Image = "map-pin",
+                Duration = 3,
+            })
+            return
+        end
+
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+
+        if not hrp then
+            Rayfield:Notify({
+                Title = "Teleport Failed",
+                Content = "HumanoidRootPart tidak ditemukan!",
+                Image = "map-pin",
+                Duration = 3,
+            })
+            return
+        end
+
+        local success, err = pcall(function()
+            local targetPos
+            if AlienMerchant:IsA("Model") and AlienMerchant.PrimaryPart then
+                targetPos = AlienMerchant.PrimaryPart.Position
+            elseif AlienMerchant:IsA("BasePart") then
+                targetPos = AlienMerchant.Position
+            else
+                error("Alien Merchant tidak punya BasePart untuk teleport")
+            end
+
+            -- teleport dengan mempertahankan arah hadap
+            hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 0, 0), targetPos + hrp.CFrame.LookVector)
+        end)
+
+        if success then
+            Rayfield:Notify({
+                Title = "Teleport Result",
+                Content = "Berhasil teleport ke Alien Merchant!",
+                Image = "map-pin",
+                Duration = 3,
+            })
+        else
+            Rayfield:Notify({
+                Title = "Teleport Failed",
+                Content = tostring(err),
                 Image = "map-pin",
                 Duration = 3,
             })
