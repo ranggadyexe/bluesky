@@ -116,7 +116,7 @@ MainTab:CreateToggle({
                 pcall(function()
                     FishingCompleteRemote:FireServer()
                 end)
-                task.wait(0.05)
+                task.wait(0.1)
             end
         end)
 
@@ -133,15 +133,14 @@ MainTab:CreateToggle({
         safetyThread = task.spawn(function()
             while _G.AutoFish do
                 -- kalau rod ilang, equip ulang
-                if not (Player.Character and Player.Character:FindFirstChild("Fishing Rod")) then
+                if not (Player.Character and Player.Character:FindFirstChild("!!!EQUIPPED_TOOL!!!")) then
                     equipRod()
                 end
                 -- kalau udah >10 detik tanpa ikan, restart fishing
                 if tick() - lastCatch > 10 then
                     startFishing()
-                    lastCatch = tick()
                 end
-                task.wait(10) -- cek berkala tiap 10 detik
+                task.wait(1)
             end
         end)
 
@@ -149,9 +148,6 @@ MainTab:CreateToggle({
         startFishing()
     end
 })
-
-
-
 
 -- =========================================================
 -- Reset Character
@@ -399,7 +395,7 @@ local function safeTeleport(cframeTarget)
     local char = player.Character or player.CharacterAdded:Wait()
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if hrp then
-        hrp.CFrame = cframeTarget + Vector3.new(0, 20, 0)
+        hrp.CFrame = cframeTarget + Vector3.new(0, 15, 0)
     end
 end
 
@@ -425,7 +421,7 @@ local function startAutoMegalodon()
                         if char and char:FindFirstChild("HumanoidRootPart") then
                             local hrp = char.HumanoidRootPart
                             local dist = (hrp.Position - propsPlatform.Position).Magnitude
-                            if dist > 20 then
+                            if dist > 5 then
                                 safeTeleport(propsPlatform.CFrame)
                             end
                         end
