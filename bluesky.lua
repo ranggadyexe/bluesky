@@ -1490,7 +1490,7 @@ task.spawn(function()
         pcall(function()
             QuestInfo:Set({
                 Title = Header.Text,
-                Content = string.format([[
+                Content = string.format([[ 
 %s
 %s
 %s
@@ -1511,11 +1511,9 @@ end)
 -- =========================================================
 -- Auto Quest Deep Sea
 
--- safe percent parsing helper (escapes percent inside pattern)
+-- safe percent parsing helper
 local function parsePercentFromText(txt)
     if not txt then return 0 end
-    -- menangkap angka (integer atau decimal) sebelum simbol %
-    -- gunakan '%%' untuk literal percent di pattern
     local num = txt:match("([%d%.]+)%%")
     return tonumber(num) or 0
 end
@@ -1523,34 +1521,32 @@ end
 -- coordinates
 local bestSpotTreasure = CFrame.lookAt(
     Vector3.new(-3563.683349609375, -279.07421875, -1679.2740478515625),
-    Vector3.new(-3563.683349609375, -279.07421875, -1679.2740478515625) + Vector3.new(-0.6082442998886108, 3.63e-08, 0.7937498688697815)
+    Vector3.new(-3563.683349609375, -279.07421875, -1679.2740478515625) + Vector3.new(-0.6082443, 0, 0.7937499)
 )
 
 local bestSpotSysyphus = CFrame.lookAt(
     Vector3.new(-3764.026, -135.074, -994.416),
-    Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, -8.57e-08, 0.720)
+    Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, 0, 0.720)
 )
 
--- references (sesuaikan jika path beda)
-local QuestFolder = workspace["!!! MENU RINGS"]["Deep Sea Tracker"].Board.Gui.Content
-local Label1 = QuestFolder.Label1
-local Label2 = QuestFolder.Label2
-local Label3 = QuestFolder.Label3
-local Label4 = QuestFolder.Label4
-local ProgressLabel = QuestFolder.Progress.ProgressLabel
-
--- helper to teleport ke spot saja (tanpa startFishing)
+-- helper to teleport ke spot
 local function goToSpot(cf)
     local plr = game.Players.LocalPlayer
     local char = plr.Character or plr.CharacterAdded:Wait()
     local hrp = char:WaitForChild("HumanoidRootPart", 5)
     if hrp then
-        pcall(function() hrp.CFrame = cf end)
-        task.wait(0.4)
+        hrp.CFrame = cf
+        task.wait(1) -- buffer agar posisi stabil
     end
 
     -- equip rod (slot 1)
-    pcall(function() EquipToolRemote:FireServer(1) end)
+    EquipToolRemote:FireServer(1)
+
+    -- tunggu rod benar-benar muncul
+    local timeout = tick() + 3
+    repeat
+        task.wait(0.2)
+    until (plr.Character and plr.Character:FindFirstChild("!!!EQUIPPED_TOOL!!!")) or tick() > timeout
 end
 
 -- Auto Quest toggle
@@ -1562,9 +1558,10 @@ QuestTab:CreateToggle({
         _G.AutoQuest = Value
 
         if not Value then
-            -- matikan auto fishing juga
-            _G.AutoFishing = false
-            Rayfield.Flags["AutoFishing"]:Set(false)
+            -- matikan AutoFishing juga lewat toggle utama
+            if Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(false)
+            end
             return
         end
         
@@ -1574,40 +1571,39 @@ QuestTab:CreateToggle({
                 local p1 = parsePercentFromText(Label1.Text)
                 local p2 = parsePercentFromText(Label2.Text)
                 local p3 = parsePercentFromText(Label3.Text)
-                local overall = parsePercentFromText(ProgressLabel.Text)
+                local overall = parsePercentFromText(Progress.Text)
 
                 if p1 < 100 then
                     if currentStep ~= 1 then
                         currentStep = 1
-                        print("[Quest] Working on: Catch 300 Rare/Epic (Treasure Room) — " .. tostring(p1) .. "%")
+                        print("[Quest] Catch 300 Rare/Epic (Treasure Room) — " .. tostring(p1) .. "%")
                     end
                     goToSpot(bestSpotTreasure)
 
                 elseif p2 < 100 then
                     if currentStep ~= 2 then
                         currentStep = 2
-                        print("[Quest] Working on: Catch 3 Mythic (Sisyphus Statue) — " .. tostring(p2) .. "%")
+                        print("[Quest] Catch 3 Mythic (Sisyphus Statue) — " .. tostring(p2) .. "%")
                     end
                     goToSpot(bestSpotSysyphus)
 
                 elseif p3 < 100 then
                     if currentStep ~= 3 then
                         currentStep = 3
-                        print("[Quest] Working on: Catch 1 SECRET (Sisyphus Statue) — " .. tostring(p3) .. "%")
+                        print("[Quest] Catch 1 SECRET (Sisyphus Statue) — " .. tostring(p3) .. "%")
                     end
                     goToSpot(bestSpotSysyphus)
 
                 else
                     if currentStep ~= 4 then
                         currentStep = 4
-                        print("[Quest] All Deep Sea quests completed (overall " .. tostring(overall) .. "%). Staying at Sisyphus.")
+                        print("[Quest] ✅ All Deep Sea quests completed (overall " .. tostring(overall) .. "%). Staying at Sisyphus.")
                     end
                     goToSpot(bestSpotSysyphus)
                 end
 
-                -- pastikan AutoFishing ON (pakai toggle Main Tab)
-                if not _G.AutoFishing then
-                    _G.AutoFishing = true
+                -- pastikan AutoFishing ON lewat toggle utama
+                if not Rayfield.Flags["AutoFishing"].CurrentValue then
                     Rayfield.Flags["AutoFishing"]:Set(true)
                     print("[Quest] Auto Fishing enabled from Main Tab.")
                 end
@@ -1617,6 +1613,7 @@ QuestTab:CreateToggle({
         end)
     end
 })
+
 
 -- =========================================================
 -- SHOP
