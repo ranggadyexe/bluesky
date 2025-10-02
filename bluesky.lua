@@ -71,17 +71,13 @@ local Character = Player.Character or Player.CharacterAdded:Wait()
 
 --// Fungsi equip rod
 local function equipRod()
-    pcall(function()
-        EquipToolRemote:FireServer(1) -- slot 1, sesuaikan kalau beda
-    end)
+    EquipToolRemote:FireServer(1) -- slot 1, sesuaikan kalau beda
 end
 
 --// Fungsi start fishing
 local function startFishing()
-    pcall(function()
-        ChargeRodRemote:InvokeServer(tick())
-        RequestMiniGameRemote:InvokeServer(40, 1)
-    end)
+    ChargeRodRemote:InvokeServer(tick())
+    RequestMiniGameRemote:InvokeServer(40, 1)
 end
 
 -- State
@@ -113,10 +109,8 @@ MainTab:CreateToggle({
         -- ✅ Spam FishingCompleteRemote
         spamThread = task.spawn(function()
             while _G.AutoFish do
-                pcall(function()
-                    FishingCompleteRemote:FireServer()
-                end)
-                task.wait(0.1)
+                FishingCompleteRemote:FireServer()
+                task.wait(0.1) -- spam tiap 0.1 detik
             end
         end)
 
@@ -129,7 +123,7 @@ MainTab:CreateToggle({
             end
         end)
 
-        -- ✅ Safety loop → cek tiap 10 detik
+        -- ✅ Safety loop → cek tiap 1 detik
         safetyThread = task.spawn(function()
             while _G.AutoFish do
                 -- kalau rod ilang, equip ulang
@@ -148,6 +142,7 @@ MainTab:CreateToggle({
         startFishing()
     end
 })
+
 
 -- =========================================================
 -- Reset Character
