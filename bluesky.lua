@@ -155,6 +155,7 @@ MainTab:CreateToggle({
 MainTab:CreateButton({
     Name = "Reset Character",
     Callback = function()
+        Rayfield.Flags["AutoFishing"]:Set(false)
         local player = game.Players.LocalPlayer
         local char = player.Character
         if not char then return end
@@ -178,6 +179,38 @@ MainTab:CreateButton({
         -- Teleport ke posisi lama
         task.wait(0.5) -- kasih delay kecil biar loading char selesai
         newHrp.CFrame = lastPos
+    end
+})
+
+MainTab:CreateButton({
+    Name = "Reset Fishing",
+    Callback = function()
+        Rayfield.Flags["AutoFishing"]:Set(false)
+        local player = game.Players.LocalPlayer
+        local char = player.Character
+        if not char then return end
+
+        -- Simpan posisi sebelum reset
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local lastPos = hrp.CFrame
+
+        -- Matikan karakter (set health 0)
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.Health = 0
+        end
+
+        -- Tunggu respawn
+        player.CharacterAdded:Wait()
+        local newChar = player.Character or player.CharacterAdded:Wait()
+        local newHrp = newChar:WaitForChild("HumanoidRootPart")
+
+        -- Teleport ke posisi lama
+        task.wait(0.5) -- kasih delay kecil biar loading char selesai
+        newHrp.CFrame = lastPos
+        task.wait(1)
+        Rayfield.Flags["AutoFishing"]:Set(true)
     end
 })
 
