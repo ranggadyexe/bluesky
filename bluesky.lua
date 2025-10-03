@@ -61,28 +61,28 @@ local RequestMiniGameRemote = netRoot:WaitForChild("RF/RequestFishingMinigameSta
 local FishingCompleteRemote = netRoot:WaitForChild("RE/FishingCompleted")
 local FishCaughtRemote      = netRoot:WaitForChild("RE/FishCaught")
 local EquipToolRemote       = netRoot:WaitForChild("RE/EquipToolFromHotbar")
+local UnequipToolRemote     = netRoot:WaitForChild("RE/UnequipToolFromHotbar")
 
 --// UI Section
 local Section = MainTab:CreateSection("🎣 Auto Fishing")
 
---// Player refs
-local Player = game.Players.LocalPlayer
-local Character = Player.Character or Player.CharacterAdded:Wait()
-
---// Fungsi equip rod
+--// Fungsi utama
 local function equipRod()
-    EquipToolRemote:FireServer(1) -- slot 1, sesuaikan kalau beda
+    EquipToolRemote:FireServer(1) -- slot 1
 end
 
---// Fungsi start fishing
+local function unequipRod()
+    UnequipToolRemote:FireServer()
+end
+
 local function startFishing()
     ChargeRodRemote:InvokeServer(tick())
     RequestMiniGameRemote:InvokeServer(40, 1)
 end
 
 -- State
-local autoFishConn
 local spamThread
+local autoFishConn
 local safetyThread
 local lastCatch = tick()
 
@@ -95,54 +95,62 @@ MainTab:CreateToggle({
         _G.AutoFish = Value
 
         if not Value then
-            -- 🔴 Matikan semua koneksi & thread
-            if autoFishConn then autoFishConn:Disconnect() autoFishConn = nil end
+            -- 🔴 Stop semua
             if spamThread then task.cancel(spamThread) spamThread = nil end
+            if autoFishConn then autoFishConn:Disconnect() autoFishConn = nil end
             if safetyThread then task.cancel(safetyThread) safetyThread = nil end
             return
         end
 
-        -- ✅ Equip rod dulu
+        -- ✅ Step 1: Equip & mulai fishing
         equipRod()
-        task.wait(0.5)
+        task.wait(0.3)
+        startFishing()
+        lastCatch = tick()
 
-        -- ✅ Spam FishingCompleteRemote
+        -- ✅ Step 2: Spam FishingCompleted
         spamThread = task.spawn(function()
             while _G.AutoFish do
-                FishingCompleteRemote:FireServer()
-                task.wait(0.1) -- spam tiap 0.1 detik
+                pcall(function()
+                    FishingCompleteRemote:FireServer()
+                end)
+                task.wait(0.1)
             end
         end)
 
-        -- ✅ Event listener sekali aja
+        -- ✅ Step 3: Saat dapat ikan → ulang siklus
         autoFishConn = FishCaughtRemote.OnClientEvent:Connect(function()
+            if not _G.AutoFish then return end
             lastCatch = tick()
-            if _G.AutoFish then
-                task.wait(0.2)
+
+            task.spawn(function()
+                -- urutan aman
+                unequipRod()
+                task.wait(0.1) -- biar server sempet proses unequip
+                equipRod()
+                task.wait(0.1) -- biar rod benar-benar ke-equip
                 startFishing()
-            end
+                lastCatch = tick()
+            end)
         end)
 
-        -- ✅ Safety loop → cek tiap 1 detik
+        -- ✅ Step 4: Safety loop (jaga kalau stuck)
         safetyThread = task.spawn(function()
             while _G.AutoFish do
-                -- kalau rod ilang, equip ulang
-                if not (Player.Character and Player.Character:FindFirstChild("!!!EQUIPPED_TOOL!!!")) then
-                    equipRod()
-                end
-                -- kalau udah >10 detik tanpa ikan, restart fishing
                 if tick() - lastCatch > 10 then
+                    -- restart fishing kalau lama gak dapat ikan
+                    unequipRod()
+                    task.wait(0.1)
+                    equipRod()
+                    task.wait(0.1)
                     startFishing()
+                    lastCatch = tick()
                 end
                 task.wait(1)
             end
         end)
-
-        -- ✅ Start pertama
-        startFishing()
     end
 })
-
 
 -- =========================================================
 -- Reset Character
