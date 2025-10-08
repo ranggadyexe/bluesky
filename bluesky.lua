@@ -190,6 +190,7 @@ MainTab:CreateButton({
 
 MainTab:CreateButton({
     Name = "Reset Fishing",
+    Flag = "ResetFishing",
     Callback = function()
         Rayfield.Flags["AutoFishing"]:Set(false)
         local player = game.Players.LocalPlayer
@@ -1704,14 +1705,8 @@ local function goToSpot(cf)
     hrp.CFrame = cf
     task.wait(1) -- buffer biar posisi stabil
 
-    -- Equip rod (slot 1)
-    EquipToolRemote:FireServer(1)
-    
     -- Pastikan AutoFishing aktif
-    if not Rayfield.Flags["AutoFishing"].CurrentValue then
-        Rayfield.Flags["AutoFishing"]:Set(true)
-        print("[System] 🎣 AutoFishing re-enabled after teleport.")
-    end
+    Rayfield.Flags["ResetFishing"].Callback()
 end
 
 -- =========================================================
