@@ -1879,7 +1879,7 @@ QuestTab:CreateToggle({
                         if missing then
                             print(string.format("[Artifact Quest] 🔍 Missing %s Artifact (ID %d). Going to fish...", missing.name, missing.id))
                             goToSpot(missing.cf)
-                            Rayfield.Flags["AutoFishing"]:Set(true)
+                            Rayfield.Flags["ResetFishing"].Callback()
                             repeat
                                 task.wait(3)
                                 p2 = parsePercentFromText(Label2.Text)
@@ -1906,7 +1906,7 @@ QuestTab:CreateToggle({
                     if not isTempleLocked() then
                         print("[Artifact Quest] 🔓 Temple Door gone — moving to Ancient Jungle for Secret fishing.")
                         goToSpot(spotAncientJungle)
-                        Rayfield.Flags["AutoFishing"]:Set(true)
+                        Rayfield.Flags["ResetFishing"].Callback()
                         while _G.AutoQuestElement and p2 < 100 do
                             p2 = parsePercentFromText(Label2.Text)
                             task.wait(5)
@@ -1921,7 +1921,7 @@ QuestTab:CreateToggle({
                         step = 3
                         print("[Element Quest] Quest 3 — Sacred Temple Fishing ("..p3.."%)")
                         goToSpot(spotSacredTemple)
-                        Rayfield.Flags["AutoFishing"]:Set(true)
+                        Rayfield.Flags["ResetFishing"].Callback()
                     end
 
                     -- Loop sampai quest complete
@@ -1938,7 +1938,7 @@ QuestTab:CreateToggle({
                         step=4
                         print("[Element Quest] Quest 4 — (Pending Data) ("..p4.."%)")
                         goToSpot(spotSacredTemple)
-                        Rayfield.Flags["AutoFishing"]:Set(true)
+                        Rayfield.Flags["ResetFishing"].Callback()
                     end
 
                 ---------------------------------------------------
