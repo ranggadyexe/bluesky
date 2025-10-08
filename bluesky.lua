@@ -1703,10 +1703,20 @@ local function goToSpot(cf)
 
     -- Teleport langsung ke lokasi
     hrp.CFrame = cf
-    task.wait(1) -- buffer biar posisi stabil
+    print("[System] 🚶 Teleported to new fishing spot.")
+    task.wait(1)
 
-    -- Pastikan AutoFishing aktif
-    Rayfield.Flags["ResetFishing"].Callback()
+    -- Gunakan tombol ResetFishing otomatis
+    if Rayfield.Flags["ResetFishing"] and Rayfield.Flags["ResetFishing"].Callback then
+        print("[System] 🔁 Performing automatic fishing reset...")
+        Rayfield.Flags["ResetFishing"].Callback()
+    else
+        -- fallback aman (kalau tombol tidak ditemukan)
+        EquipToolRemote:FireServer(1)
+        task.wait(0.5)
+        Rayfield.Flags["AutoFishing"]:Set(true)
+        print("[System] ⚙️ AutoFishing fallback triggered.")
+    end
 end
 
 -- =========================================================
