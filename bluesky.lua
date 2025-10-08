@@ -1700,41 +1700,18 @@ local function goToSpot(cf)
     local hrp = char:WaitForChild("HumanoidRootPart", 5)
     if not hrp then return end
 
-    print("[System] 🚶 Teleporting to spot...")
-    Rayfield.Flags["AutoFishing"]:Set(false)
-    task.wait(0.2)
+    -- Teleport langsung ke lokasi
+    hrp.CFrame = cf
+    task.wait(1) -- buffer biar posisi stabil
 
-    -- Simpan posisi target teleport
-    local targetPos = cf
-    hrp.CFrame = targetPos
-    task.wait(1)
-
-    -- Kill player untuk hard reset fishing state
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.Health = 0
-        print("[System] 💀 Character reset for clean fishing state.")
-    end
-
-    -- Tunggu respawn
-    local newChar = plr.CharacterAdded:Wait()
-    local newHrp = newChar:WaitForChild("HumanoidRootPart")
-    task.wait(0.5)
-    newHrp.CFrame = targetPos
-    print("[System] ✅ Teleported and restored position after respawn.")
-
-    -- Equip fishing rod
+    -- Equip rod (slot 1)
     EquipToolRemote:FireServer(1)
-
-    -- Tunggu rod benar-benar muncul
-    local timeout = tick() + 3
-    repeat
-        task.wait(0.2)
-    until (plr.Character and plr.Character:FindFirstChild("!!!EQUIPPED_TOOL!!!")) or tick() > timeout
-
-    -- Aktifkan AutoFishing ulang
-    Rayfield.Flags["AutoFishing"]:Set(true)
-    print("[System] 🎣 AutoFishing re-enabled after teleport.")
+    
+    -- Pastikan AutoFishing aktif
+    if not Rayfield.Flags["AutoFishing"].CurrentValue then
+        Rayfield.Flags["AutoFishing"]:Set(true)
+        print("[System] 🎣 AutoFishing re-enabled after teleport.")
+    end
 end
 
 -- =========================================================
