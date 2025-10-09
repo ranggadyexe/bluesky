@@ -218,7 +218,7 @@ MainTab:CreateButton({
         task.wait(0.5) -- kasih delay kecil biar loading char selesai
         newHrp.CFrame = lastPos
         task.wait(1)
-        Rayfield.Flags["AutoQuestElement"]:Set(false)
+        Rayfield.Flags["AutoQuestElement"]:Set(true)
         Rayfield.Flags["AutoFishing"]:Set(true)
     end
 })
