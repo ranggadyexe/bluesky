@@ -189,6 +189,41 @@ MainTab:CreateButton({
 })
 
 MainTab:CreateButton({
+    Name = "Reset Quest Element",
+    Flag = "ResetQuestElement",
+    Callback = function()
+        Rayfield.Flags["AutoFishing"]:Set(false)
+        Rayfield.Flags["AutoQuestElement"]:Set(false)
+        local player = game.Players.LocalPlayer
+        local char = player.Character
+        if not char then return end
+
+        -- Simpan posisi sebelum reset
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local lastPos = hrp.CFrame
+
+        -- Matikan karakter (set health 0)
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.Health = 0
+        end
+
+        -- Tunggu respawn
+        player.CharacterAdded:Wait()
+        local newChar = player.Character or player.CharacterAdded:Wait()
+        local newHrp = newChar:WaitForChild("HumanoidRootPart")
+
+        -- Teleport ke posisi lama
+        task.wait(0.5) -- kasih delay kecil biar loading char selesai
+        newHrp.CFrame = lastPos
+        task.wait(1)
+        Rayfield.Flags["AutoQuestElement"]:Set(false)
+        Rayfield.Flags["AutoFishing"]:Set(true)
+    end
+})
+
+MainTab:CreateButton({
     Name = "Reset Fishing",
     Flag = "ResetFishing",
     Callback = function()
@@ -1763,7 +1798,7 @@ QuestTab:CreateToggle({
                         if missing then
                             print(string.format("[Artifact Quest] 🔍 Missing %s Artifact (ID %d). Going to fish...", missing.name, missing.id))
                             goToSpot(missing.cf)
-                            Rayfield.Flags["ResetFishing"].Callback()
+                            Rayfield.Flags["ResetQuestElement"].Callback()
                             repeat
                                 task.wait(3)
                                 p2 = parsePercentFromText(Label2.Text)
@@ -1790,7 +1825,7 @@ QuestTab:CreateToggle({
                     if not isTempleLocked() then
                         print("[Artifact Quest] 🔓 Temple Door gone — moving to Ancient Jungle for Secret fishing.")
                         goToSpot(spotAncientJungle)
-                        Rayfield.Flags["ResetFishing"].Callback()
+                        Rayfield.Flags["ResetQuestElement"].Callback()
                         while _G.AutoQuestElement and p2 < 100 do
                             p2 = parsePercentFromText(Label2.Text)
                             task.wait(5)
@@ -1805,7 +1840,7 @@ QuestTab:CreateToggle({
                         step = 3
                         print("[Element Quest] Quest 3 — Sacred Temple Fishing ("..p3.."%)")
                         goToSpot(spotSacredTemple)
-                        Rayfield.Flags["ResetFishing"].Callback()
+                        Rayfield.Flags["ResetQuestElement"].Callback()
                     end
 
                     -- Loop sampai quest complete
@@ -1822,7 +1857,7 @@ QuestTab:CreateToggle({
                         step=4
                         print("[Element Quest] Quest 4 — (Pending Data) ("..p4.."%)")
                         goToSpot(spotSacredTemple)
-                        Rayfield.Flags["ResetFishing"].Callback()
+                        Rayfield.Flags["ResetQuestElement"].Callback()
                     end
 
                 ---------------------------------------------------
