@@ -1887,7 +1887,7 @@ end
 -- TOGGLE
 QuestTab:CreateToggle({
     Name = "Auto Favorite Artifacts",
-    CurrentValue = true,
+    CurrentValue = false,
     Flag = "AutoFavoriteArtifacts",
     Callback = function(Value)
         _G.AutoFavoriteArtifacts = Value
