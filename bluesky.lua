@@ -189,11 +189,11 @@ MainTab:CreateButton({
 })
 
 MainTab:CreateButton({
-    Name = "Reset Quest Element",
+    Name = "Reset Quest Artifact",
     Flag = "ResetQuestElement",
     Callback = function()
         Rayfield.Flags["AutoFishing"]:Set(false)
-        Rayfield.Flags["AutoQuestElement"]:Set(false)
+        Rayfield.Flags["AutoQuestArtifact"]:Set(false)
         local player = game.Players.LocalPlayer
         local char = player.Character
         if not char then return end
@@ -218,7 +218,7 @@ MainTab:CreateButton({
         task.wait(0.5) -- kasih delay kecil biar loading char selesai
         newHrp.CFrame = lastPos
         task.wait(1)
-        Rayfield.Flags["AutoQuestElement"]:Set(true)
+        Rayfield.Flags["AutoQuestArtifact"]:Set(true)
         Rayfield.Flags["AutoFishing"]:Set(true)
     end
 })
@@ -1360,6 +1360,476 @@ AutoTab:CreateToggle({
 
 
 -- =========================================================
+-- Quest Element
+
+local Section = QuestTab:CreateSection("Element Quest")
+
+local QuestInfoElement = QuestTab:CreateParagraph({
+    Title = "Element Quest",
+    Content = "Loading quest info..."
+})
+
+-- References
+local QuestFolder = workspace["!!! MENU RINGS"]["Element Tracker"].Board.Gui.Content
+local Header = QuestFolder.Header
+local Label1 = QuestFolder.Label1
+local Label2 = QuestFolder.Label2
+local Label3 = QuestFolder.Label3
+local Label4 = QuestFolder.Label4
+local Progress = QuestFolder.Progress.ProgressLabel
+
+-- Auto update loop
+task.spawn(function()
+    while task.wait(1) do
+        pcall(function()
+            QuestInfoElement:Set({
+                Title = Header.Text,
+                Content = string.format([[ 
+%s
+%s
+%s
+%s
+
+%s
+                ]],
+                Label1.Text,
+                Label2.Text,
+                Label3.Text,
+                Label4.Text,
+                Progress.Text
+            )})
+        end)
+    end
+end)
+
+-- =========================================================
+-- Auto Quest Element
+
+local function parsePercentFromText(txt)
+    if not txt then return 0 end
+    local num = txt:match("([%d%.]+)%%")
+    return tonumber(num) or 0
+end
+
+local function hasGhostfinnRod()
+    local rods = Data.Data["Inventory"]["Fishing Rods"]
+    for _, r in pairs(rods) do
+        if tonumber(r.id) == 169 then return true end
+    end
+    return false
+end
+
+local function forceRejoin()
+    local ts = game:GetService("TeleportService")
+    local plr = game.Players.LocalPlayer
+    print("[Element Quest] Rejoining server...")
+    ts:Teleport(game.PlaceId, plr)
+end
+
+-- =========================================================
+-- Respawn-safe utilities
+
+local function waitForCharacter()
+    local plr = game.Players.LocalPlayer
+    local char = plr.Character or plr.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart", 10)
+    if not hrp then
+        warn("[System] ⚠️ Character respawn timeout — HRP not found.")
+        return nil
+    end
+    return char, hrp
+end
+
+local function goToSpot(cf)
+    local plr = game.Players.LocalPlayer
+    local char, hrp = waitForCharacter()
+    if not hrp then return end
+
+    -- Matikan AutoFishing dulu biar aman
+    if Rayfield.Flags["AutoFishing"] and Rayfield.Flags["AutoFishing"].CurrentValue then
+        Rayfield.Flags["AutoFishing"]:Set(false)
+    end
+
+    task.wait(0.3)
+    hrp.CFrame = cf
+    print("[System] 🚶 Teleported to new fishing spot.")
+
+    -- Jalankan ResetFishing (akan menyebabkan mati / respawn)
+    if Rayfield.Flags["ResetFishing"] and Rayfield.Flags["ResetFishing"].Callback then
+        print("[System] 🔁 Performing automatic fishing reset...")
+        Rayfield.Flags["ResetFishing"].Callback()
+    else
+        print("[System] ⚙️ Fallback reset via EquipToolRemote")
+        EquipToolRemote:FireServer(1)
+    end
+
+    print("[System] ⏳ Waiting for respawn to finish...")
+    local newChar, newHrp = waitForCharacter()
+    if not newHrp then
+        warn("[System] ⚠️ Failed to find HRP after respawn.")
+        return
+    end
+
+    task.wait(2)
+    Rayfield.Flags["AutoFishing"]:Set(true)
+    print("[System] ✅ AutoFishing re-enabled after respawn.")
+    newHrp.CFrame = cf
+    print("[System] 📍 Re-teleported after respawn.")
+end
+
+-- Auto resume autofishing after respawn
+local plr = game.Players.LocalPlayer
+plr.CharacterAdded:Connect(function(newChar)
+    print("[System] ♻️ Character respawn detected.")
+    task.spawn(function()
+        local hrp = newChar:WaitForChild("HumanoidRootPart", 10)
+        if hrp then
+            task.wait(2)
+            if _G.AutoQuestElement then
+                Rayfield.Flags["AutoFishing"]:Set(true)
+                print("[System] ✅ AutoFishing resumed automatically after respawn.")
+            end
+        end
+    end)
+end)
+
+-- =========================================================
+-- Coordinates
+
+local spotAncientJungle = CFrame.lookAt(
+    Vector3.new(1497.642822265625, 7.417082786560059, -437.892333984375),
+    Vector3.new(1497.642822265625, 7.417082786560059, -437.892333984375)
+        + Vector3.new(0.9999828338623047, 1.9449498012136246e-08, 0.0058635021559894085)
+)
+
+local spotSacredTemple = CFrame.lookAt(
+    Vector3.new(1479.1177978515625, -22.125001907348633, -666.4100341796875),
+    Vector3.new(1479.1177978515625, -22.125001907348633, -666.4100341796875)
+        + Vector3.new(0.993732750415802, 4.227080196983479e-08, -0.11178195476531982)
+)
+
+-- =========================================================
+-- Main Toggle
+
+QuestTab:CreateToggle({
+    Name = "⚡ Auto Quest (Element Quest)",
+    CurrentValue = false,
+    Flag = "AutoQuestElement",
+    Callback = function(v)
+        _G.AutoQuestElement = v
+        if not v then
+            if Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(false)
+            end
+            return
+        end
+
+        task.spawn(function()
+            local step = 0
+            while _G.AutoQuestElement do
+                local p1 = parsePercentFromText(Label1.Text)
+                local p2 = parsePercentFromText(Label2.Text)
+                local p3 = parsePercentFromText(Label3.Text)
+                local p4 = parsePercentFromText(Label4.Text)
+                local overall = parsePercentFromText(Progress.Text)
+
+                ---------------------------------------------------
+                -- Quest 1
+                if p1 < 100 then
+                    if step ~= 1 then
+                        step = 1
+                        print("[Element Quest] Quest 1 — Ghostfinn Rod ("..p1.."%)")
+                    end
+                    if hasGhostfinnRod() then
+                        print("[Element Quest] Rod found but quest incomplete → rejoin.")
+                        forceRejoin()
+                        return
+                    else
+                        print("[Element Quest] Rod missing → start Deep Sea Quest.")
+                        if not _G.AutoQuest then
+                            Rayfield.Flags["AutoQuest"]:Set(true)
+                        end
+                    end
+
+                ---------------------------------------------------
+                -- Quest 2 — Ancient Jungle Fishing
+                elseif p2 < 100 then
+                    if step ~= 2 then
+                        step = 2
+                        print("[Element Quest] Quest 2 — Fishing at Ancient Jungle ("..p2.."%)")
+                        goToSpot(spotAncientJungle)
+                        task.wait(3)
+                        Rayfield.Flags["AutoFishing"]:Set(true)
+                    end
+                    while _G.AutoQuestElement and p2 < 100 do
+                        p2 = parsePercentFromText(Label2.Text)
+                        task.wait(5)
+                    end
+                    print("[Element Quest] ✅ Quest 2 complete! Proceeding to next quest...")
+
+                ---------------------------------------------------
+                -- Quest 3 — Sacred Temple Fishing
+                elseif p3 < 100 then
+                    if step ~= 3 then
+                        step = 3
+                        print("[Element Quest] Quest 3 — Checking Temple Door status before fishing...")
+
+                        -- Fungsi helper buat cek status pintu
+                        local function isTempleLocked()
+                            local door = workspace:FindFirstChild("JUNGLE INTERACTIONS")
+                                and workspace["JUNGLE INTERACTIONS"].Doors
+                                and workspace["JUNGLE INTERACTIONS"].Doors:FindFirstChild("TempleDoor")
+                            if door and door:FindFirstChild("DELETE_ME_AFTER_UNLOCK") then
+                                return true
+                            end
+                            return false
+                        end
+
+                        -- Kalau pintu masih terkunci → jalankan quest artifact
+                        if isTempleLocked() then
+                            print("[Element Quest] 🚪 Temple Door still locked — switching to Artifact Quest.")
+                            
+                            -- Matikan Element Quest
+                            Rayfield.Flags["AutoQuestElement"]:Set(false)
+                            _G.AutoQuestElement = false
+
+                            -- Aktifkan Artifact Quest
+                            Rayfield.Flags["AutoQuestArtifact"]:Set(true)
+                            _G.AutoQuestArtifact = true
+
+                            -- Tunggu sampai pintu kebuka
+                            repeat
+                                task.wait(5)
+                            until not isTempleLocked()
+
+                            print("[Element Quest] 🔓 Temple Door unlocked — returning to Element Quest.")
+
+                            -- Matikan Artifact Quest
+                            Rayfield.Flags["AutoQuestArtifact"]:Set(false)
+                            _G.AutoQuestArtifact = false
+
+                            -- Aktifkan lagi Element Quest
+                            Rayfield.Flags["AutoQuestElement"]:Set(true)
+                            _G.AutoQuestElement = true
+
+                            return -- biar loop di bawah nggak langsung jalan di frame yang sama
+                        end
+
+                        -- Kalau pintu sudah kebuka, lanjut ke Quest 3 biasa
+                        print("[Element Quest] Temple Door already unlocked — proceeding with Quest 3 Fishing.")
+                        goToSpot(spotSacredTemple)
+                        task.wait(3)
+                        Rayfield.Flags["AutoFishing"]:Set(true)
+                    end
+
+                    -- Loop sampai Quest 3 selesai
+                    while _G.AutoQuestElement and p3 < 100 do
+                        p3 = parsePercentFromText(Label3.Text)
+                        task.wait(5)
+                    end
+                    print("[Element Quest] ✅ Quest 3 complete! You can continue manually for Quest 4.")
+
+                ---------------------------------------------------
+                -- Quest 4 — Manual (stay at Sacred Temple)
+                else
+                    if step ~= 4 then
+                        step = 4
+                        print("[Element Quest] Quest 4 — Manual Stage. Staying at Sacred Temple.")
+                        goToSpot(spotSacredTemple)
+                        task.wait(3)
+                        Rayfield.Flags["AutoFishing"]:Set(true)
+                    end
+                end
+
+                ---------------------------------------------------
+                if not Rayfield.Flags["AutoFishing"].CurrentValue then
+                    Rayfield.Flags["AutoFishing"]:Set(true)
+                end
+                task.wait(5)
+            end
+        end)
+    end
+})
+
+-- =========================================================
+-- ⚙️ Auto Artifact Quest (Separate Toggle)
+
+QuestTab:CreateToggle({
+    Name = "🔱 Auto Quest (Artifact Quest)",
+    CurrentValue = false,
+    Flag = "AutoQuestArtifact",
+    Callback = function(v)
+        _G.AutoQuestArtifact = v
+        if not v then
+            if Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(false)
+            end
+            print("[Artifact Quest] 💤 Disabled.")
+            return
+        end
+
+        task.spawn(function()
+            print("[Artifact Quest] 🧭 Started Auto Artifact Quest.")
+            _G.AllLeversPlaced = _G.AllLeversPlaced or false
+            _G.ArtifactObtained = _G.ArtifactObtained or {}
+
+            local leverArtifacts = {
+                {id=266, name="Crescent", cf=CFrame.lookAt(Vector3.new(1403.884,4.909,120.543), Vector3.new(1403.543,4.909,121.483))},
+                {id=265, name="Arrow", cf=CFrame.lookAt(Vector3.new(877.822,3.976,-345.733), Vector3.new(876.827,3.976,-345.626))},
+                {id=271, name="Hourglass Diamond", cf=CFrame.lookAt(Vector3.new(1478.453,3.935,-844.165), Vector3.new(1478.249,3.935,-843.186))},
+                {id=267, name="Diamond", cf=CFrame.lookAt(Vector3.new(1838.371,5.282,-296.796), Vector3.new(1839.277,5.282,-297.220))},
+            }
+
+            local RemotePlaceLever = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net["RE/PlaceLeverItem"]
+
+            local function hasArtifact(id)
+                if _G.ArtifactObtained[id] then return true end
+                local items = Data.Data["Inventory"]["Items"]
+                for _, item in pairs(items) do
+                    if tonumber(item.Id or item.id) == id then
+                        _G.ArtifactObtained[id] = true
+                        return true
+                    end
+                end
+                return false
+            end
+
+            local function allArtifactsCollected()
+                for _, art in ipairs(leverArtifacts) do
+                    if not hasArtifact(art.id) then
+                        return false
+                    end
+                end
+                return true
+            end
+
+            local function tryPlaceAllLevers()
+                if _G.AllLeversPlaced then
+                    print("[Artifact Quest] ⚙️ All levers already placed — skipping.")
+                    return
+                end
+                print("[Artifact Quest] 🧩 Placing all 4 artifacts at once...")
+                for _, art in pairs(leverArtifacts) do
+                    RemotePlaceLever:FireServer(art.name .. " Artifact")
+                    task.wait(3)
+                end
+                print("[Artifact Quest] ✅ All lever items placed successfully.")
+                _G.AllLeversPlaced = true
+            end
+
+            -- =====================================================
+            -- Main Loop
+
+            while _G.AutoQuestArtifact do
+                if _G.AllLeversPlaced then
+                    print("[Artifact Quest] ✅ All artifacts placed. Stopping automation.")
+                    break
+                end
+
+                -- cari artifact yang belum punya
+                local target = nil
+                for _, art in ipairs(leverArtifacts) do
+                    if not hasArtifact(art.id) then
+                        target = art
+                        break
+                    end
+                end
+
+                if target then
+                    print(string.format("[Artifact Quest] 🔍 Missing %s Artifact (ID %d). Going to fish...", target.name, target.id))
+                    goToSpot(target.cf)
+                    task.wait(3)
+
+                    local timeout = 0
+                    repeat
+                        task.wait(5)
+                        timeout = timeout + 1
+                        print(string.format("[Artifact Quest] ⏳ Waiting for %s Artifact... (%ds)", target.name, timeout * 5))
+                    until hasArtifact(target.id) or not _G.AutoQuestArtifact or timeout > 300
+
+                    if hasArtifact(target.id) then
+                        print("[Artifact Quest] ✅ Obtained " .. target.name .. " Artifact!")
+                    elseif timeout > 300 then
+                        warn("[Artifact Quest] ⚠️ Timeout while waiting for " .. target.name .. " Artifact.")
+                    end
+
+                else
+                    print("[Artifact Quest] ✅ All 4 artifacts collected! Placing levers...")
+                    tryPlaceAllLevers()
+                    break
+                end
+
+                task.wait(3)
+            end
+
+            print("[Artifact Quest] 🧭 Automation finished.")
+        end)
+    end
+})
+
+-- target artifact IDs
+local targetIDs = {
+    [265] = "Arrow",
+    [266] = "Crescent",
+    [267] = "Diamond",
+    [271] = "Hourglass Diamond"
+}
+
+-- cache waktu terakhir favorit biar tidak spam
+local lastFavorite = {}
+
+local function autoFavoriteArtifacts()
+    local items = Data.Data["Inventory"]["Items"]
+    for _, itemData in pairs(items) do
+        local id = tonumber(itemData.Id or itemData.id)
+        local uuid = tostring(itemData.UUID or itemData.uuid)
+        local favorited = itemData.Favorited or itemData.favorited
+
+        if id and targetIDs[id] and uuid then
+            -- kalau user un-favorite manual, reset cache agar bisa difavorite lagi
+            if favorited == false and lastFavorite[uuid] then
+                lastFavorite[uuid] = nil
+            end
+
+            -- hanya kirim kalau belum favorit dan belum dikirim dalam 2 detik terakhir
+            if not favorited then
+                local last = lastFavorite[uuid] or 0
+                if tick() - last > 0.1 then
+                    print(string.format("⭐ Re-favoriting %s Artifact (ID %d, UUID %s)",
+                        targetIDs[id], id, uuid))
+                    RemoteFavorite:FireServer(uuid)
+                    lastFavorite[uuid] = tick()
+                end
+            end
+        end
+    end
+end
+
+-- =========================================================
+-- TOGGLE
+QuestTab:CreateToggle({
+    Name = "Auto Favorite Artifacts",
+    CurrentValue = false,
+    Flag = "AutoFavoriteArtifacts",
+    Callback = function(Value)
+        _G.AutoFavoriteArtifacts = Value
+        if not Value then
+            print("[Artifacts] Auto Favorite disabled.")
+            lastFavorite = {}
+            return
+        end
+
+        task.spawn(function()
+            print("[Artifacts] Auto Favorite enabled (real-time mode).")
+            while _G.AutoFavoriteArtifacts do
+                pcall(autoFavoriteArtifacts)
+                task.wait(0.1)
+            end
+        end)
+    end
+})
+
+-- =========================================================
 -- Quest Info
 
 local Section = QuestTab:CreateSection("Deep Sea Quest")
@@ -1508,439 +1978,7 @@ QuestTab:CreateToggle({
     end
 })
 
--- =========================================================
--- Quest Info
 
-local Section = QuestTab:CreateSection("Element Quest")
-
-local QuestInfoElement = QuestTab:CreateParagraph({
-    Title = "Element Quest",
-    Content = "Loading quest info..."
-})
-
--- References
-local QuestFolder = workspace["!!! MENU RINGS"]["Element Tracker"].Board.Gui.Content
-local Header = QuestFolder.Header
-local Label1 = QuestFolder.Label1
-local Label2 = QuestFolder.Label2
-local Label3 = QuestFolder.Label3
-local Label4 = QuestFolder.Label4
-local Progress = QuestFolder.Progress.ProgressLabel
-
--- Auto update loop
-task.spawn(function()
-    while task.wait(1) do
-        pcall(function()
-            QuestInfoElement:Set({
-                Title = Header.Text,
-                Content = string.format([[ 
-%s
-%s
-%s
-%s
-
-%s
-                ]],
-                Label1.Text,
-                Label2.Text,
-                Label3.Text,
-                Label4.Text,
-                Progress.Text
-            )})
-        end)
-    end
-end)
-
--- =========================================================
--- Auto Quest Element
-
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Client = require(ReplicatedStorage.Packages.Replion).Client
-local Data = Client:WaitReplion("Data")
-local RemotePlaceLever = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net["RE/PlaceLeverItem"]
-
--- =========================================================
--- Helpers
-
-local function parsePercentFromText(txt)
-    if not txt then return 0 end
-    local num = txt:match("([%d%.]+)%%")
-    return tonumber(num) or 0
-end
-
-local function hasGhostfinnRod()
-    local rods = Data.Data["Inventory"]["Fishing Rods"]
-    for _, r in pairs(rods) do
-        if tonumber(r.id) == 169 then return true end
-    end
-    return false
-end
-
-local function hasArtifact(id)
-    local items = Data.Data["Inventory"]["Items"]
-    for _, i in pairs(items) do
-        if tonumber(i.Id or i.id) == id then return true end
-    end
-    return false
-end
-
-local function forceRejoin()
-    local ts = game:GetService("TeleportService")
-    local plr = game.Players.LocalPlayer
-    print("[Element Quest] Rejoining server...")
-    ts:Teleport(game.PlaceId, plr)
-end
-
--- Tunggu karakter baru setelah respawn
-local function waitForCharacter()
-    local plr = game.Players.LocalPlayer
-    local char = plr.Character or plr.CharacterAdded:Wait()
-    local hrp = char:WaitForChild("HumanoidRootPart", 10)
-    if not hrp then
-        warn("[System] ⚠️ Character respawn timeout — HRP not found.")
-        return nil
-    end
-    return char, hrp
-end
-
-local function goToSpot(cf)
-    local plr = game.Players.LocalPlayer
-    local char, hrp = waitForCharacter()
-    if not hrp then return end
-
-    -- Teleport ke lokasi tujuan
-    hrp.CFrame = cf
-    print("[System] 🚶 Teleported to new fishing spot.")
-
-    -- Reset fishing sequence aman (disable dulu autofishing)
-    if Rayfield.Flags["AutoFishing"] and Rayfield.Flags["AutoFishing"].CurrentValue then
-        Rayfield.Flags["AutoFishing"]:Set(false)
-    end
-
-    -- Trigger reset fishing
-    if Rayfield.Flags["ResetFishing"] and Rayfield.Flags["ResetFishing"].Callback then
-        print("[System] 🔁 Performing automatic fishing reset...")
-        Rayfield.Flags["ResetFishing"].Callback()
-    else
-        print("[System] ⚙️ Fallback reset via EquipToolRemote")
-        EquipToolRemote:FireServer(1)
-    end
-
-    -- Tunggu karakter respawn
-    print("[System] ⏳ Waiting for respawn to finish...")
-    local newChar, newHrp = waitForCharacter()
-    if not newHrp then return end
-
-    -- Aktifkan AutoFishing lagi setelah respawn
-    task.wait(1)
-    Rayfield.Flags["AutoFishing"]:Set(true)
-    print("[System] ✅ AutoFishing re-enabled after respawn.")
-end
-
-
--- =========================================================
--- Coordinates
-
-local spotCrescent = CFrame.lookAt(Vector3.new(1403.884,4.909,120.543), Vector3.new(1403.543,4.909,121.483))
-local spotArrow    = CFrame.lookAt(Vector3.new(877.822,3.976,-345.733), Vector3.new(876.827,3.976,-345.626))
-local spotHourglass= CFrame.lookAt(Vector3.new(1478.453,3.935,-844.165), Vector3.new(1478.249,3.935,-843.186))
-local spotDiamond  = CFrame.lookAt(Vector3.new(1838.371,5.282,-296.796), Vector3.new(1839.277,5.282,-297.220))
-
--- tempat Quest 3 (isi nanti)
-local spotSecretFishing = CFrame.lookAt(
-    Vector3.new(2000,10,-500),
-    Vector3.new(2001,10,-501)
-)
-
--- =========================================================
--- Lever Artifacts
-
-local leverArtifacts = {
-    [266] = "Crescent Artifact",
-    [265] = "Arrow Artifact",
-    [271] = "Hourglass Diamond Artifact",
-    [267] = "Diamond Artifact"
-}
-
-_G.ArtifactObtained = _G.ArtifactObtained or {}
-_G.AllLeversPlaced = _G.AllLeversPlaced or false
-
-local function hasArtifact(id)
-    if _G.ArtifactObtained[id] then return true end
-    local items = Data.Data["Inventory"]["Items"]
-    for _, item in pairs(items) do
-        if tonumber(item.Id or item.id) == id then
-            _G.ArtifactObtained[id] = true
-            return true
-        end
-    end
-    return false
-end
-
-local function allArtifactsCollected()
-    for id in pairs(leverArtifacts) do
-        if not hasArtifact(id) then
-            return false
-        end
-    end
-    return true
-end
-
-local function tryPlaceAllLevers()
-    if _G.AllLeversPlaced then
-        print("[Artifact Quest] ⚙️ All levers already placed — skipping.")
-        return
-    end
-    print("[Artifact Quest] 🧭 Placing all 4 artifacts at once...")
-    for id, name in pairs(leverArtifacts) do
-        RemotePlaceLever:FireServer(name)
-        task.wait(3)
-    end
-    print("[Artifact Quest] ✅ All lever items placed.")
-    _G.AllLeversPlaced = true
-end
-
--- Lokasi default fishing setelah Temple terbuka
-local spotAncientJungle = CFrame.lookAt(
-    Vector3.new(1497.642822265625, 7.417082786560059, -437.892333984375),
-    Vector3.new(1497.642822265625, 7.417082786560059, -437.892333984375)
-        + Vector3.new(0.9999828338623047, 1.9449498012136246e-08, 0.0058635021559894085)
-)
-
--- Lokasi Sacred Temple (Quest 3)
-local spotSacredTemple = CFrame.lookAt(
-    Vector3.new(1479.1177978515625, -22.125001907348633, -666.4100341796875),
-    Vector3.new(1479.1177978515625, -22.125001907348633, -666.4100341796875)
-        + Vector3.new(0.993732750415802, 4.227080196983479e-08, -0.11178195476531982)
-)
-
--- =========================================================
--- Main Toggle
-QuestTab:CreateToggle({
-    Name = "⚡ Auto Quest (Element Quest)",
-    CurrentValue = false,
-    Flag = "AutoQuestElement",
-    Callback = function(v)
-        _G.AutoQuestElement = v
-        if not v then
-            if Rayfield.Flags["AutoFishing"].CurrentValue then
-                Rayfield.Flags["AutoFishing"]:Set(false)
-            end
-            return
-        end
-
-        task.spawn(function()
-            local step = 0
-            while _G.AutoQuestElement do
-                local p1 = parsePercentFromText(Label1.Text)
-                local p2 = parsePercentFromText(Label2.Text)
-                local p3 = parsePercentFromText(Label3.Text)
-                local p4 = parsePercentFromText(Label4.Text)
-                local overall = parsePercentFromText(Progress.Text)
-
-                ---------------------------------------------------
-                -- Quest 1
-                if p1 < 100 then
-                    if step~=1 then
-                        step=1
-                        print("[Element Quest] Quest 1 — Ghostfinn Rod ("..p1.."%)")
-                    end
-                    if hasGhostfinnRod() then
-                        print("[Element Quest] Rod found but quest incomplete → rejoin.")
-                        forceRejoin()
-                        return
-                    else
-                        print("[Element Quest] Rod missing → start Deep Sea Quest.")
-                        if not _G.AutoQuest then
-                            Rayfield.Flags["AutoQuest"]:Set(true)
-                        end
-                    end
-
-                ---------------------------------------------------
-                -- Quest 2
-                elseif p2 < 100 or (workspace:FindFirstChild("JUNGLE INTERACTIONS")
-                    and workspace["JUNGLE INTERACTIONS"].Doors
-                    and workspace["JUNGLE INTERACTIONS"].Doors.TempleDoor
-                    and workspace["JUNGLE INTERACTIONS"].Doors.TempleDoor:FindFirstChild("DELETE_ME_AFTER_UNLOCK")) then
-
-                    if step ~= 2 then
-                        step = 2
-                        print("[Element Quest] Quest 2 — Handling Temple Door and Artifact flow...")
-                    end
-
-                    local function isTempleLocked()
-                        local door = workspace:FindFirstChild("JUNGLE INTERACTIONS")
-                            and workspace["JUNGLE INTERACTIONS"].Doors
-                            and workspace["JUNGLE INTERACTIONS"].Doors.TempleDoor
-                        if door and door:FindFirstChild("DELETE_ME_AFTER_UNLOCK") then
-                            return true
-                        end
-                        return false
-                    end
-
-                    local order = {
-                        {id=266, name="Crescent", cf=spotCrescent},
-                        {id=265, name="Arrow", cf=spotArrow},
-                        {id=271, name="Hourglass Diamond", cf=spotHourglass},
-                        {id=267, name="Diamond", cf=spotDiamond},
-                    }
-
-                    -- Selama pintu masih ada, jalankan quest artifact
-                    while _G.AutoQuestElement and isTempleLocked() do
-                        local missing = nil
-                        for _, art in ipairs(order) do
-                            if not hasArtifact(art.id) then
-                                missing = art
-                                break
-                            end
-                        end
-
-                        if missing then
-                            print(string.format("[Artifact Quest] 🔍 Missing %s Artifact (ID %d). Going to fish...", missing.name, missing.id))
-                            goToSpot(missing.cf)
-                            Rayfield.Flags["ResetQuestElement"].Callback()
-                            repeat
-                                task.wait(3)
-                                p2 = parsePercentFromText(Label2.Text)
-                            until hasArtifact(missing.id) or not _G.AutoQuestElement
-                            print("[Artifact Quest] ✅ Got "..missing.name.." Artifact.")
-                        else
-                            print("[Artifact Quest] ✅ All 4 artifacts collected! Placing levers...")
-                            tryPlaceAllLevers()
-                            _G.AllLeversPlaced = true
-                            task.wait(5)
-                        end
-
-                        -- cek apakah pintu sudah terbuka
-                        if not isTempleLocked() then
-                            print("[Artifact Quest] 🚪 Temple Door unlocked! Proceeding to Quest 3.")
-                            break
-                        end
-
-                        p2 = parsePercentFromText(Label2.Text)
-                        task.wait(2)
-                    end
-
-                    -- Setelah pintu terbuka, pindah ke Ancient Jungle (default spot)
-                    if not isTempleLocked() then
-                        print("[Artifact Quest] 🔓 Temple Door gone — moving to Ancient Jungle for Secret fishing.")
-                        goToSpot(spotAncientJungle)
-                        Rayfield.Flags["ResetQuestElement"].Callback()
-                        while _G.AutoQuestElement and p2 < 100 do
-                            p2 = parsePercentFromText(Label2.Text)
-                            task.wait(5)
-                        end
-                        print("[Artifact Quest] ✅ Quest 2 fully completed — ready for Quest 3.")
-                    end
-
-                ---------------------------------------------------
-                -- Quest 3: Sacred Temple
-                elseif p3 < 100 then
-                    if step ~= 3 then
-                        step = 3
-                        print("[Element Quest] Quest 3 — Sacred Temple Fishing ("..p3.."%)")
-                        goToSpot(spotSacredTemple)
-                        Rayfield.Flags["ResetQuestElement"].Callback()
-                    end
-
-                    -- Loop sampai quest complete
-                    while _G.AutoQuestElement and p3 < 100 do
-                        p3 = parsePercentFromText(Label3.Text)
-                        task.wait(5)
-                    end
-                    print("[Element Quest] ✅ Quest 3 complete! Moving to next quest...")
-
-                ---------------------------------------------------
-                -- Quest 4 (Pending)
-                elseif p4 < 100 then
-                    if step~=4 then
-                        step=4
-                        print("[Element Quest] Quest 4 — (Pending Data) ("..p4.."%)")
-                        goToSpot(spotSacredTemple)
-                        Rayfield.Flags["ResetQuestElement"].Callback()
-                    end
-
-                ---------------------------------------------------
-                -- All done
-                else
-                    if step~=5 then
-                        step=5
-                        print("[Element Quest] ✅ All Element Quests completed ("..overall.."%).")
-                    end
-                end
-
-                ---------------------------------------------------
-                if not Rayfield.Flags["AutoFishing"].CurrentValue then
-                    Rayfield.Flags["AutoFishing"]:Set(true)
-                end
-                task.wait(5)
-            end
-        end)
-    end
-})
-
-
--- target artifact IDs
-local targetIDs = {
-    [265] = "Arrow",
-    [266] = "Crescent",
-    [267] = "Diamond",
-    [271] = "Hourglass Diamond"
-}
-
--- cache waktu terakhir favorit biar tidak spam
-local lastFavorite = {}
-
-local function autoFavoriteArtifacts()
-    local items = Data.Data["Inventory"]["Items"]
-    for _, itemData in pairs(items) do
-        local id = tonumber(itemData.Id or itemData.id)
-        local uuid = tostring(itemData.UUID or itemData.uuid)
-        local favorited = itemData.Favorited or itemData.favorited
-
-        if id and targetIDs[id] and uuid then
-            -- kalau user un-favorite manual, reset cache agar bisa difavorite lagi
-            if favorited == false and lastFavorite[uuid] then
-                lastFavorite[uuid] = nil
-            end
-
-            -- hanya kirim kalau belum favorit dan belum dikirim dalam 2 detik terakhir
-            if not favorited then
-                local last = lastFavorite[uuid] or 0
-                if tick() - last > 0.1 then
-                    print(string.format("⭐ Re-favoriting %s Artifact (ID %d, UUID %s)",
-                        targetIDs[id], id, uuid))
-                    RemoteFavorite:FireServer(uuid)
-                    lastFavorite[uuid] = tick()
-                end
-            end
-        end
-    end
-end
-
--- =========================================================
--- TOGGLE
-QuestTab:CreateToggle({
-    Name = "Auto Favorite Artifacts",
-    CurrentValue = false,
-    Flag = "AutoFavoriteArtifacts",
-    Callback = function(Value)
-        _G.AutoFavoriteArtifacts = Value
-        if not Value then
-            print("[Artifacts] Auto Favorite disabled.")
-            lastFavorite = {}
-            return
-        end
-
-        task.spawn(function()
-            print("[Artifacts] Auto Favorite enabled (real-time mode).")
-            while _G.AutoFavoriteArtifacts do
-                pcall(autoFavoriteArtifacts)
-                task.wait(0.1)
-            end
-        end)
-    end
-})
 
 -- =========================================================
 -- SHOP
