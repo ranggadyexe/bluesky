@@ -52,7 +52,8 @@ local ShopTab = Window:CreateTab("Shop", "shopping-cart")
 local TeleportTab = Window:CreateTab("Teleport", "map-pin")
 local ConfigTab = Window:CreateTab("Config", "cog")
 
---// ⚡ Remote references
+-- =========================================================
+-- ⚙️ Remote References
 local netRoot = game:GetService("ReplicatedStorage")
     :WaitForChild("Packages")
     :WaitForChild("_Index")
@@ -66,12 +67,14 @@ local FishCaughtRemote      = netRoot:WaitForChild("RE/FishCaught")
 local EquipToolRemote       = netRoot:WaitForChild("RE/EquipToolFromHotbar")
 local UnequipToolRemote     = netRoot:WaitForChild("RE/UnequipToolFromHotbar")
 
---// UI Section
+-- =========================================================
+-- 🎣 UI Section
 local Section = MainTab:CreateSection("🎣 Auto Fishing")
 
---// Fungsi utama
+-- =========================================================
+-- 🧠 Helper Functions
 local function equipRod()
-    EquipToolRemote:FireServer(1) -- slot 1
+    EquipToolRemote:FireServer(1)
 end
 
 local function unequipRod()
@@ -80,68 +83,58 @@ end
 
 local function startFishing()
     ChargeRodRemote:InvokeServer(tick())
-    RequestMiniGameRemote:InvokeServer(40, 1)
+    RequestMiniGameRemote:InvokeServer(50, 1)
 end
 
--- State
-local spamThread
+-- =========================================================
+-- 🔁 State
 local autoFishConn
 local safetyThread
 local lastCatch = tick()
+local spamThread
 
---// Toggle
+-- =========================================================
+-- 🎣 Toggle 1: Auto Fishing
 MainTab:CreateToggle({
-    Name = "Auto Fishing",
+    Name = "🎣 Auto Fishing",
     CurrentValue = false,
     Flag = "AutoFishing",
-    Callback = function(Value)
-        _G.AutoFish = Value
+    Callback = function(v)
+        _G.AutoFish = v
 
-        if not Value then
-            -- 🔴 Stop semua
-            if spamThread then task.cancel(spamThread) spamThread = nil end
+        if not v then
             if autoFishConn then autoFishConn:Disconnect() autoFishConn = nil end
             if safetyThread then task.cancel(safetyThread) safetyThread = nil end
+            print("[AutoFishing] 🔴 Stopped.")
             return
         end
 
-        -- ✅ Step 1: Equip & mulai fishing
+        print("[AutoFishing] ✅ Started.")
         equipRod()
         task.wait(0.3)
         startFishing()
         lastCatch = tick()
 
-        -- ✅ Step 2: Spam FishingCompleted
-        spamThread = task.spawn(function()
-            while _G.AutoFish do
-                pcall(function()
-                    FishingCompleteRemote:FireServer()
-                end)
-                task.wait(0.1)
-            end
-        end)
-
-        -- ✅ Step 3: Saat dapat ikan → ulang siklus
+        -- 🐟 Event: Saat ikan tertangkap
         autoFishConn = FishCaughtRemote.OnClientEvent:Connect(function()
             if not _G.AutoFish then return end
             lastCatch = tick()
 
             task.spawn(function()
-                -- urutan aman
                 unequipRod()
-                task.wait(0.1) -- biar server sempet proses unequip
+                task.wait(0.1)
                 equipRod()
-                task.wait(0.1) -- biar rod benar-benar ke-equip
+                task.wait(0.1)
                 startFishing()
                 lastCatch = tick()
             end)
         end)
 
-        -- ✅ Step 4: Safety loop (jaga kalau stuck)
+        -- 🧠 Safety thread (restart jika macet)
         safetyThread = task.spawn(function()
             while _G.AutoFish do
                 if tick() - lastCatch > 10 then
-                    -- restart fishing kalau lama gak dapat ikan
+                    print("[AutoFishing] ⚠️ Restarting fishing (stuck).")
                     unequipRod()
                     task.wait(0.1)
                     equipRod()
@@ -154,6 +147,34 @@ MainTab:CreateToggle({
         end)
     end
 })
+
+-- =========================================================
+-- Auto Complete Fishing
+MainTab:CreateToggle({
+    Name = "⚡ Auto Complete Fishing",
+    CurrentValue = false,
+    Flag = "AutoCompleteFishing",
+    Callback = function(v)
+        _G.AutoCompleteFishing = v
+
+        if not v then
+            if spamThread then task.cancel(spamThread) spamThread = nil end
+            print("[AutoComplete] 🔴 Disabled.")
+            return
+        end
+
+        print("[AutoComplete] ⚡ Spamming FishingCompleteRemote...")
+        spamThread = task.spawn(function()
+            while _G.AutoCompleteFishing do
+                pcall(function()
+                    FishingCompleteRemote:FireServer()
+                end)
+                task.wait(0.1)
+            end
+        end)
+    end
+})
+
 
 -- =========================================================
 -- Reset Character
@@ -188,76 +209,43 @@ MainTab:CreateButton({
     end
 })
 
-MainTab:CreateButton({
-    Name = "Reset Quest Artifact",
-    Flag = "ResetQuestElement",
-    Callback = function()
-        Rayfield.Flags["AutoFishing"]:Set(false)
-        Rayfield.Flags["AutoQuestArtifact"]:Set(false)
-        local player = game.Players.LocalPlayer
-        local char = player.Character
-        if not char then return end
+-- =========================================================
+-- 🎁 Auto Claim Event Rewards (Loop Every 60 Minutes)
+local Section = MainTab:CreateSection("Jungle Event")
 
-        -- Simpan posisi sebelum reset
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        local lastPos = hrp.CFrame
+MainTab:CreateToggle({
+    Name = "Auto Claim Event Rewards (Every 60 Minutes)",
+    CurrentValue = false,
+    Flag = "AutoClaimEventRewards",
+    Callback = function(state)
+        _G.AutoClaimEventRewards = state
+        if not state then return end
 
-        -- Matikan karakter (set health 0)
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.Health = 0
-        end
+        task.spawn(function()
+            local remote = netRoot:WaitForChild("RE/ClaimEventReward")
 
-        -- Tunggu respawn
-        player.CharacterAdded:Wait()
-        local newChar = player.Character or player.CharacterAdded:Wait()
-        local newHrp = newChar:WaitForChild("HumanoidRootPart")
+            while _G.AutoClaimEventRewards do
+                -- Klaim semua reward 1–13
+                for i = 1, 13 do
+                    if not _G.AutoClaimEventRewards then break end
+                    task.wait(0.25)
+                    pcall(function()
+                        remote:FireServer(i)
+                    end)
+                end
 
-        -- Teleport ke posisi lama
-        task.wait(0.5) -- kasih delay kecil biar loading char selesai
-        newHrp.CFrame = lastPos
-        task.wait(1)
-        Rayfield.Flags["AutoQuestArtifact"]:Set(true)
-        Rayfield.Flags["AutoFishing"]:Set(true)
-    end
-})
-
-MainTab:CreateButton({
-    Name = "Reset Fishing",
-    Flag = "ResetFishing",
-    Callback = function()
-        Rayfield.Flags["AutoFishing"]:Set(false)
-        local player = game.Players.LocalPlayer
-        local char = player.Character
-        if not char then return end
-
-        -- Simpan posisi sebelum reset
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        local lastPos = hrp.CFrame
-
-        -- Matikan karakter (set health 0)
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.Health = 0
-        end
-
-        -- Tunggu respawn
-        player.CharacterAdded:Wait()
-        local newChar = player.Character or player.CharacterAdded:Wait()
-        local newHrp = newChar:WaitForChild("HumanoidRootPart")
-
-        -- Teleport ke posisi lama
-        task.wait(0.5) -- kasih delay kecil biar loading char selesai
-        newHrp.CFrame = lastPos
-        task.wait(1)
-        Rayfield.Flags["AutoFishing"]:Set(true)
-    end
+                -- Tunggu 60 menit sebelum mengulang
+                local cooldown = 60 * 60
+                for t = 1, cooldown do
+                    if not _G.AutoClaimEventRewards then break end
+                    task.wait(1)
+                end
+            end
+        end)
+    end,
 })
 
 local Section = MainTab:CreateSection("Auto Events Megalodon, Ghost Worm, Wormhole, Ghost Shark Hunt, Shark Hunt")
-
 
 --// 📍 Best Spot lokasi default
 local bestSpotCFrame = CFrame.lookAt(
@@ -940,125 +928,171 @@ local Section = AutoTab:CreateSection("Auto Trade")
 -- Local
 local remote = ReplicatedStorage.Packages["_Index"]["sleitnick_net@0.2.0"].net["RF/InitiateTrade"]
 
+-- 🔁 State
 local targetUserId = nil
 local tradingActive = false
 local skipFavorited = true
 local skipEnchantStone = true
 
--- Get player names
+-- =========================================================
+-- 🧠 Helper Functions
 local function getPlayerNames()
     local names = {}
     for _, plr in ipairs(Players:GetPlayers()) do
         table.insert(names, plr.Name)
     end
+    table.sort(names)
     return names
 end
 
--- Dropdown: select target
+local function notify(title, content, icon)
+    pcall(function()
+        Rayfield:Notify({
+            Title = title or "Info",
+            Content = content or "",
+            Duration = 3,
+            Image = icon or "info"
+        })
+    end)
+end
+
+local function teleportNearTarget()
+    local target = targetUserId and Players:GetPlayerByUserId(targetUserId)
+    if not target then return end
+
+    local tChar = target.Character
+    local myChar = LocalPlayer.Character
+    if not (tChar and myChar) then return end
+
+    local tHRP = tChar:FindFirstChild("HumanoidRootPart")
+    local mHRP = myChar:FindFirstChild("HumanoidRootPart")
+    if not (tHRP and mHRP) then return end
+
+    mHRP.CFrame = tHRP.CFrame * CFrame.new(3, 0, 0)
+end
+
+-- =========================================================
+-- 🎛️ UI
 local TradeDropdown = AutoTab:CreateDropdown({
     Name = "Select Trade Target",
     Options = getPlayerNames(),
     CurrentOption = {LocalPlayer.Name},
-    Callback = function(selectedName)
-        local chosen = selectedName[1]
-        local targetPlayer = Players:FindFirstChild(chosen)
-        if targetPlayer then
-            targetUserId = targetPlayer.UserId
-            print("Target set to:", chosen, "(" .. targetUserId .. ")")
+    Callback = function(selected)
+        local name = selected and selected[1]
+        local plr = name and Players:FindFirstChild(name)
+        if plr then
+            targetUserId = plr.UserId
+            print("[Trade] Target set:", name, "(" .. targetUserId .. ")")
         else
-            warn("Player not found:", chosen)
+            targetUserId = nil
+            warn("[Trade] Invalid player selection")
         end
-    end,
+    end
 })
 
--- Button: refresh dropdown
+local function refreshDropdown()
+    local opts = getPlayerNames()
+    pcall(function()
+        TradeDropdown.Options = opts
+        if TradeDropdown.Refresh then
+            TradeDropdown:Refresh(opts, true)
+        end
+    end)
+end
+
+Players.PlayerAdded:Connect(refreshDropdown)
+Players.PlayerRemoving:Connect(function(plr)
+    if plr.UserId == targetUserId then
+        targetUserId = nil
+        notify("Target Left", "Your selected player left the server.", "triangle-alert")
+    end
+    refreshDropdown()
+end)
+
 AutoTab:CreateButton({
     Name = "🔄 Refresh Player List",
-    Callback = function()
-        TradeDropdown.Options = getPlayerNames()
-    end,
+    Callback = refreshDropdown
 })
 
--- Toggle: skip favorited
 AutoTab:CreateToggle({
     Name = "Skip Favorited Items",
     CurrentValue = true,
     Callback = function(state)
         skipFavorited = state
-    end,
+        print("[Trade] Skip Favorited Items:", state)
+    end
 })
 
--- Toggle: skip enchant stone
 AutoTab:CreateToggle({
     Name = "Skip Enchant Stone",
     CurrentValue = true,
     Callback = function(state)
         skipEnchantStone = state
-        print("Skip Enchant Stone:", state)
-    end,
+        print("[Trade] Skip Enchant Stone:", state)
+    end
 })
 
--- Toggle: auto trade
+-- =========================================================
+-- 🚀 Main Auto Trade Toggle
 AutoTab:CreateToggle({
     Name = "Auto Trade",
     CurrentValue = false,
     Callback = function(state)
         tradingActive = state
 
-        if tradingActive then
-            if not targetUserId then
-                warn("Select a target before starting!")
-                tradingActive = false
-                -- Notify with Rayfield
-                Rayfield:Notify({
-                    Title = "Error",
-                    Content = "Please select a target before starting Auto Trade!",
-                    Duration = 3,
-                    Image = "triangle-alert"
-                })
-                return
-            end
+        if not tradingActive then
+            notify("Info", "Auto Trade stopped", "circle-off")
+            return
+        end
 
-            -- Teleport to target player
-            local targetPlayer = Players:GetPlayerByUserId(targetUserId)
-            if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(3, 0, 0)
-                end
-            end
+        local target = targetUserId and Players:GetPlayerByUserId(targetUserId)
+        if not target then
+            tradingActive = false
+            notify("Error", "Please select a valid target before starting!", "triangle-alert")
+            return
+        end
 
-            task.spawn(function()
-                while tradingActive do
-                    local rods = Data.Data["Inventory"]["Items"]
+        notify("Starting", "Auto Trade started.", "arrow-right-left")
+
+        task.spawn(function()
+            while tradingActive do
+                teleportNearTarget()
+
+                local rods = Data.Data and Data.Data["Inventory"] and Data.Data["Inventory"]["Items"]
+                if rods then
                     local tradedSomething = false
 
                     for _, rodData in pairs(rods) do
                         if not tradingActive then break end
 
                         if rodData.UUID then
-                            -- Debug struktur data
                             local favoritedValue = rodData.Favorited
                             if rodData.Metadata and rodData.Metadata.Favorited ~= nil then
                                 favoritedValue = rodData.Metadata.Favorited
                             end
 
-                            -- Logika trade berdasarkan toggle dan skip Id 105, 81
-                            local shouldTrade = rodData.UUID and 
-                                (not skipFavorited or (favoritedValue == nil or favoritedValue == false)) and 
-                                (not skipEnchantStone or (rodData.Id ~= 10 and rodData.Id ~= 125)) and 
+                            -- logika trade seperti versi kamu
+                            local shouldTrade =
+                                rodData.UUID and
+                                (not skipFavorited or (favoritedValue == nil or favoritedValue == false)) and
+                                (not skipEnchantStone or (rodData.Id ~= 10 and rodData.Id ~= 125)) and
                                 (rodData.Id ~= 105 and rodData.Id ~= 81)
+
                             if shouldTrade then
                                 local uuid = rodData.UUID
-                                remote:InvokeServer(targetUserId, uuid)
+                                local ok, res = pcall(function()
+                                    return remote:InvokeServer(targetUserId, uuid)
+                                end)
                                 tradedSomething = true
-                                task.wait(0.1)
+
                                 Rayfield:Notify({
                                     Title = "Loading",
                                     Content = "Processing...",
                                     Duration = 3,
                                     Image = "arrow-right-left"
                                 })
+
+                                task.wait(0.1)
                             end
                         end
                     end
@@ -1073,19 +1107,15 @@ AutoTab:CreateToggle({
                         tradingActive = false
                         break
                     end
-
-                    task.wait(2)
+                else
+                    -- kalau rods belum ready
+                    task.wait(1)
                 end
-            end)
-        else
-            Rayfield:Notify({
-                Title = "Info",
-                Content = "Auto Trade has been stopped",
-                Duration = 3,
-                Image = "circle-off"
-            })
-        end
-    end,
+
+                task.wait(1.5)
+            end
+        end)
+    end
 })
 
 -- ==== Auto Accept Trade via PromptController (sesuai flow game) ====
@@ -1156,7 +1186,6 @@ AutoTab:CreateDropdown({
 AutoTab:CreateToggle({
     Name = "Enable Auto-Favorite",
     CurrentValue = false,
-    Flag = "AutoFavToggle",
     Callback = function(value)
         autoFavEnabled = value
     end,
@@ -1232,7 +1261,7 @@ local NetFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
 local RodPriority = {
     ["Angler Rod"]    = 13,
     ["Ares Rod"]      = 12,
-    ["Astral Rod"]    = 11,
+    ["Astral Rod"]    = 11, 
     ["Chrome Rod"]    = 10,
     ["Steampunk Rod"] = 9,
     ["Midnight Rod"]  = 8,
@@ -1552,15 +1581,61 @@ QuestTab:CreateToggle({
                     end
 
                 ---------------------------------------------------
-                -- Quest 2 — Ancient Jungle Fishing
+                -- Quest 2 — Handle Artifact first, then Secret Fishing
                 elseif p2 < 100 then
                     if step ~= 2 then
                         step = 2
-                        print("[Element Quest] Quest 2 — Fishing at Ancient Jungle ("..p2.."%)")
+                        print("[Element Quest] Quest 2 — Checking Temple Door and Artifact status before fishing...")
+
+                        -- Fungsi helper buat cek status pintu
+                        local function isTempleLocked()
+                            local door = workspace:FindFirstChild("JUNGLE INTERACTIONS")
+                                and workspace["JUNGLE INTERACTIONS"].Doors
+                                and workspace["JUNGLE INTERACTIONS"].Doors:FindFirstChild("TempleDoor")
+                            if door and door:FindFirstChild("DELETE_ME_AFTER_UNLOCK") then
+                                return true
+                            end
+                            return false
+                        end
+
+                        -- Kalau pintu masih terkunci → selesaikan dulu Quest Artifact
+                        if isTempleLocked() then
+                            print("[Element Quest] 🚪 Temple Door locked — starting Artifact Quest first...")
+
+                            -- Matikan Element Quest
+                            Rayfield.Flags["AutoQuestElement"]:Set(false)
+                            _G.AutoQuestElement = false
+
+                            -- Aktifkan Artifact Quest
+                            Rayfield.Flags["AutoQuestArtifact"]:Set(true)
+                            _G.AutoQuestArtifact = true
+
+                            -- Tunggu sampai pintu kebuka
+                            repeat
+                                task.wait(5)
+                            until not isTempleLocked()
+
+                            print("[Element Quest] 🔓 Temple Door unlocked — switching back to Element Quest.")
+
+                            -- Matikan Artifact Quest
+                            Rayfield.Flags["AutoQuestArtifact"]:Set(false)
+                            _G.AutoQuestArtifact = false
+
+                            -- Aktifkan lagi Element Quest
+                            Rayfield.Flags["AutoQuestElement"]:Set(true)
+                            _G.AutoQuestElement = true
+
+                            return -- stop frame ini, lanjut loop dari awal
+                        end
+
+                        -- Kalau pintu sudah kebuka, baru lanjut ke secret fishing
+                        print("[Element Quest] Quest 2 — Temple unlocked, fishing at Ancient Jungle ("..p2.."%)")
                         goToSpot(spotAncientJungle)
                         task.wait(3)
                         Rayfield.Flags["AutoFishing"]:Set(true)
                     end
+
+                    -- Loop sampai Quest 2 selesai
                     while _G.AutoQuestElement and p2 < 100 do
                         p2 = parsePercentFromText(Label2.Text)
                         task.wait(5)
@@ -1652,42 +1727,55 @@ QuestTab:CreateToggle({
 })
 
 -- =========================================================
--- ⚙️ Auto Artifact Quest (Separate Toggle)
+-- ⚙️ Auto Artifact Quest (Conditional Door Check)
 
 QuestTab:CreateToggle({
     Name = "🔱 Auto Quest (Artifact Quest)",
     CurrentValue = false,
     Flag = "AutoQuestArtifact",
-    Callback = function(v)
-        _G.AutoQuestArtifact = v
-        if not v then
+    Callback = function(state)
+        _G.AutoQuestArtifact = state
+        if not state then
             if Rayfield.Flags["AutoFishing"].CurrentValue then
                 Rayfield.Flags["AutoFishing"]:Set(false)
             end
-            print("[Artifact Quest] 💤 Disabled.")
             return
         end
 
-        task.spawn(function()
-            print("[Artifact Quest] 🧭 Started Auto Artifact Quest.")
-            _G.AllLeversPlaced = _G.AllLeversPlaced or false
-            _G.ArtifactObtained = _G.ArtifactObtained or {}
+        -- ✅ Cek status pintu Sacred Temple
+        local templeDoor = workspace:FindFirstChild("JUNGLE INTERACTIONS")
+            and workspace["JUNGLE INTERACTIONS"].Doors
+            and workspace["JUNGLE INTERACTIONS"].Doors:FindFirstChild("TempleDoor")
 
+        if not (templeDoor and templeDoor:FindFirstChild("DELETE_ME_AFTER_UNLOCK")) then
+            Rayfield:Notify({
+                Title = "Info",
+                Content = "Door Sacred Temple Opened.",
+                Duration = 5,
+                Image = "info"
+            })
+            Rayfield.Flags["AutoQuestArtifact"]:Set(false)
+            _G.AutoQuestArtifact = false
+            return
+        end
+
+        -- =========================================================
+        task.spawn(function()
             local leverArtifacts = {
-                {id=266, name="Crescent", cf=CFrame.lookAt(Vector3.new(1403.884,4.909,120.543), Vector3.new(1403.543,4.909,121.483))},
-                {id=265, name="Arrow", cf=CFrame.lookAt(Vector3.new(877.822,3.976,-345.733), Vector3.new(876.827,3.976,-345.626))},
-                {id=271, name="Hourglass Diamond", cf=CFrame.lookAt(Vector3.new(1478.453,3.935,-844.165), Vector3.new(1478.249,3.935,-843.186))},
-                {id=267, name="Diamond", cf=CFrame.lookAt(Vector3.new(1838.371,5.282,-296.796), Vector3.new(1839.277,5.282,-297.220))},
+                {id = 266, name = "Crescent Artifact", cf = CFrame.lookAt(Vector3.new(1403.884,4.909,120.543), Vector3.new(1403.543,4.909,121.483))},
+                {id = 265, name = "Arrow Artifact", cf = CFrame.lookAt(Vector3.new(877.822,3.976,-345.733), Vector3.new(876.827,3.976,-345.626))},
+                {id = 271, name = "Hourglass Diamond Artifact", cf = CFrame.lookAt(Vector3.new(1478.453,3.935,-844.165), Vector3.new(1478.249,3.935,-843.186))},
+                {id = 267, name = "Diamond Artifact", cf = CFrame.lookAt(Vector3.new(1838.371,5.282,-296.796), Vector3.new(1839.277,5.282,-297.220))}
             }
 
-            local RemotePlaceLever = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net["RE/PlaceLeverItem"]
+            local RemotePlaceLever = ReplicatedStorage
+                .Packages._Index["sleitnick_net@0.2.0"]
+                .net["RE/PlaceLeverItem"]
 
             local function hasArtifact(id)
-                if _G.ArtifactObtained[id] then return true end
                 local items = Data.Data["Inventory"]["Items"]
                 for _, item in pairs(items) do
                     if tonumber(item.Id or item.id) == id then
-                        _G.ArtifactObtained[id] = true
                         return true
                     end
                 end
@@ -1703,69 +1791,48 @@ QuestTab:CreateToggle({
                 return true
             end
 
-            local function tryPlaceAllLevers()
-                if _G.AllLeversPlaced then
-                    print("[Artifact Quest] ⚙️ All levers already placed — skipping.")
-                    return
-                end
-                print("[Artifact Quest] 🧩 Placing all 4 artifacts at once...")
-                for _, art in pairs(leverArtifacts) do
-                    RemotePlaceLever:FireServer(art.name .. " Artifact")
-                    task.wait(3)
-                end
-                print("[Artifact Quest] ✅ All lever items placed successfully.")
-                _G.AllLeversPlaced = true
-            end
-
-            -- =====================================================
-            -- Main Loop
-
             while _G.AutoQuestArtifact do
-                if _G.AllLeversPlaced then
-                    print("[Artifact Quest] ✅ All artifacts placed. Stopping automation.")
+                -- ❌ Jika pintu sudah terbuka di tengah jalan, hentikan
+                local door = workspace:FindFirstChild("JUNGLE INTERACTIONS")
+                    and workspace["JUNGLE INTERACTIONS"].Doors
+                    and workspace["JUNGLE INTERACTIONS"].Doors:FindFirstChild("TempleDoor")
+                if not (door and door:FindFirstChild("DELETE_ME_AFTER_UNLOCK")) then
+                    Rayfield:Notify({
+                        Title = "Info",
+                        Content = "Pintu Sacred Temple sudah terbuka.",
+                        Duration = 5,
+                        Image = "info"
+                    })
+                    Rayfield.Flags["AutoQuestArtifact"]:Set(false)
+                    _G.AutoQuestArtifact = false
                     break
                 end
 
-                -- cari artifact yang belum punya
-                local target = nil
+                if allArtifactsCollected() then
+                    for _, art in ipairs(leverArtifacts) do
+                        RemotePlaceLever:FireServer(art.name)
+                        task.wait(3)
+                    end
+                    break
+                end
+
                 for _, art in ipairs(leverArtifacts) do
+                    if not _G.AutoQuestArtifact then break end
                     if not hasArtifact(art.id) then
-                        target = art
-                        break
+                        goToSpot(art.cf)
+                        task.wait(2)
+                        Rayfield.Flags["AutoFishing"]:Set(true)
+                        repeat
+                            task.wait(5)
+                        until hasArtifact(art.id) or not _G.AutoQuestArtifact
                     end
                 end
-
-                if target then
-                    print(string.format("[Artifact Quest] 🔍 Missing %s Artifact (ID %d). Going to fish...", target.name, target.id))
-                    goToSpot(target.cf)
-                    task.wait(3)
-
-                    local timeout = 0
-                    repeat
-                        task.wait(5)
-                        timeout = timeout + 1
-                        print(string.format("[Artifact Quest] ⏳ Waiting for %s Artifact... (%ds)", target.name, timeout * 5))
-                    until hasArtifact(target.id) or not _G.AutoQuestArtifact or timeout > 300
-
-                    if hasArtifact(target.id) then
-                        print("[Artifact Quest] ✅ Obtained " .. target.name .. " Artifact!")
-                    elseif timeout > 300 then
-                        warn("[Artifact Quest] ⚠️ Timeout while waiting for " .. target.name .. " Artifact.")
-                    end
-
-                else
-                    print("[Artifact Quest] ✅ All 4 artifacts collected! Placing levers...")
-                    tryPlaceAllLevers()
-                    break
-                end
-
-                task.wait(3)
+                task.wait(1)
             end
-
-            print("[Artifact Quest] 🧭 Automation finished.")
         end)
-    end
+    end,
 })
+
 
 -- target artifact IDs
 local targetIDs = {
@@ -1987,6 +2054,7 @@ local Section = ShopTab:CreateSection("Buy Rod")
 
 --// Data Rods
 local rods = {
+    ["Bamboo Rod (12M)"] = 258,
     ["Angler Rod (8M)"] = 168,
     ["Ares Rod (3M)"] = 126,
     ["Astral Rod (1M)"] = 5,
@@ -2015,6 +2083,7 @@ end
 local Dropdown = ShopTab:CreateDropdown({
     Name = "Select Fishing Rod",
     Options = {
+        "Bamboo Rod (12M)",
         "Angler Rod (8M)",
         "Ares Rod (3M)",
         "Astral Rod (1M)",
@@ -2028,7 +2097,7 @@ local Dropdown = ShopTab:CreateDropdown({
         "Midnight Rod (50K)",
         "Steampunk Rod (215K)",
     },
-    CurrentOption = {"Angler Rod (8M)"}, -- Rayfield menggunakan array untuk CurrentOption
+    CurrentOption = {"Bamboo Rod (12M)"}, -- Rayfield menggunakan array untuk CurrentOption
     Callback = function(selectedOption)
         local selectedRodName = selectedOption[1] -- Ambil string dari array
         local rodId = rods[selectedRodName]
@@ -2081,6 +2150,7 @@ local Section = ShopTab:CreateSection("Buy Bobber")
 
 --// Data Bobbers
 local bobbers = {
+    ["Floral Bait (4M)"] = 20,
     ["Aether Bait (3.7M)"] = 16,
     ["Chroma Bait (290K)"] = 6,
     ["Corrupt Bait (1.15M)"] = 15,
@@ -2105,6 +2175,7 @@ end
 local Dropdown = ShopTab:CreateDropdown({
     Name = "Select Bobber",
     Options = {
+        "Floral Bait (4M)",
         "Aether Bait (3.7M)",
         "Chroma Bait (290K)",
         "Corrupt Bait (1.15M)",
@@ -2114,7 +2185,7 @@ local Dropdown = ShopTab:CreateDropdown({
         "Nature Bait (83.5K)",
         "Topwater (100)",
     },
-    CurrentOption = {"Aether Bait (3.7M)"}, -- Rayfield menggunakan array untuk CurrentOption
+    CurrentOption = {"Floral Bait (4M)"}, -- Rayfield menggunakan array untuk CurrentOption
     Callback = function(selectedOption)
         local selectedBobberName = selectedOption[1] -- Ambil string dari array
         local bobberId = bobbers[selectedBobberName]
