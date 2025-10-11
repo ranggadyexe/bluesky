@@ -1066,33 +1066,40 @@ AutoTab:CreateToggle({
                         if not tradingActive then break end
 
                         if rodData.UUID then
+                            -- ambil status favorit
                             local favoritedValue = rodData.Favorited
                             if rodData.Metadata and rodData.Metadata.Favorited ~= nil then
                                 favoritedValue = rodData.Metadata.Favorited
                             end
 
-                            -- logika trade seperti versi kamu
+                            -- daftar ID yang di-skip (enchant dll)
+                            local skipIds = {
+                                [10] = true,
+                                [81] = true,
+                                [105] = true,
+                                [125] = true,
+                                [246] = true
+                            }
+
+                            -- logika filter utama
                             local shouldTrade =
                                 rodData.UUID and
                                 (not skipFavorited or (favoritedValue == nil or favoritedValue == false)) and
-                                (not skipEnchantStone or (rodData.Id ~= 10 and rodData.Id ~= 125)) and
-                                (rodData.Id ~= 105 and rodData.Id ~= 81)
+                                (not skipEnchantStone or not skipIds[rodData.Id])
 
+                            -- kalau memenuhi semua syarat → trade
                             if shouldTrade then
-                                local uuid = rodData.UUID
+                                print(string.format("[TRADE] Kirim item: %s | ID:%s | Fav:%s", rodData.Name or "Unknown", rodData.Id, tostring(favoritedValue)))
                                 local ok, res = pcall(function()
-                                    return remote:InvokeServer(targetUserId, uuid)
+                                    return remote:InvokeServer(targetUserId, rodData.UUID)
                                 end)
-                                tradedSomething = true
-
                                 Rayfield:Notify({
-                                    Title = "Loading",
-                                    Content = "Processing...",
-                                    Duration = 3,
+                                    Title = "Trading",
+                                    Content = "Sending item...",
+                                    Duration = 2,
                                     Image = "arrow-right-left"
                                 })
-
-                                task.wait(0.1)
+                                task.wait(0.2)
                             end
                         end
                     end
