@@ -1062,7 +1062,7 @@ AutoTab:CreateToggle({
                 if rods then
                     local tradedSomething = false
 
-                    for _, rodData in pairs(rods) do
+                    for uuid, rodData in pairs(rods) do
                         if not tradingActive then break end
 
                         if rodData.UUID then
@@ -1087,19 +1087,40 @@ AutoTab:CreateToggle({
                                 (not skipFavorited or (favoritedValue == nil or favoritedValue == false)) and
                                 (not skipEnchantStone or not skipIds[rodData.Id])
 
-                            -- kalau memenuhi semua syarat → trade
                             if shouldTrade then
+                                tradedSomething = true
                                 print(string.format("[TRADE] Kirim item: %s | ID:%s | Fav:%s", rodData.Name or "Unknown", rodData.Id, tostring(favoritedValue)))
+
+                                -- kirim item
                                 local ok, res = pcall(function()
                                     return remote:InvokeServer(targetUserId, rodData.UUID)
                                 end)
-                                Rayfield:Notify({
-                                    Title = "Trading",
-                                    Content = "Sending item...",
-                                    Duration = 2,
-                                    Image = "arrow-right-left"
-                                })
-                                task.wait(0.2)
+
+                                if ok then
+                                    Rayfield:Notify({
+                                        Title = "Trading",
+                                        Content = "Mengirim " .. (rodData.Name or "item") .. "...",
+                                        Duration = 2,
+                                        Image = "arrow-right-left"
+                                    })
+
+                                    -- tunggu sampai item hilang dari inventory
+                                    local startTime = tick()
+                                    while Data.Data.Inventory.Items[rodData.UUID] and tick() - startTime < 10 do
+                                        task.wait(0.2)
+                                    end
+
+                                    if Data.Data.Inventory.Items[rodData.UUID] then
+                                        warn(string.format("[TRADE] %s belum hilang setelah 10 detik, lanjut item berikutnya.", rodData.Name or "Unknown"))
+                                    else
+                                        print(string.format("[TRADE] %s berhasil dikirim!", rodData.Name or "Unknown"))
+                                    end
+                                else
+                                    warn("[TRADE] Gagal kirim item:", rodData.Name)
+                                end
+
+                                -- jeda sedikit sebelum lanjut item berikutnya
+                                task.wait(0.5)
                             end
                         end
                     end
