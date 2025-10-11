@@ -1716,10 +1716,9 @@ QuestTab:CreateToggle({
                 else
                     if step ~= 4 then
                         step = 4
-                        print("[Element Quest] Quest 4 — Manual Stage. Staying at Sacred Temple.")
-                        goToSpot(spotSacredTemple)
                         task.wait(3)
-                        Rayfield.Flags["AutoFishing"]:Set(true)
+                        Rayfield.Flags["MegalodonHunt"]:Set(true)
+                        Rayfield.Flags["AutoQuestElement"]:Set(false)
                     end
                 end
 
