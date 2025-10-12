@@ -86,6 +86,75 @@ local function startFishing()
     RequestMiniGameRemote:InvokeServer(50, 1)
 end
 
+local function waitForCharacter()
+    local plr = game.Players.LocalPlayer
+    local char = plr.Character or plr.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart", 10)
+    if not hrp then
+        warn("[System] ⚠️ Character respawn timeout — HRP not found.")
+        return nil
+    end
+    return char, hrp
+end
+
+local function goToSpot(cf)
+    local plr = game.Players.LocalPlayer
+    local char, hrp = waitForCharacter()
+    if not hrp then return end
+
+    -- Matikan AutoFishing dulu biar aman
+    if Rayfield.Flags["AutoFishing"] and Rayfield.Flags["AutoFishing"].CurrentValue then
+        Rayfield.Flags["AutoFishing"]:Set(false)
+    end
+
+    task.wait(0.3)
+    hrp.CFrame = cf
+    print("[System] 🚶 Teleported to new fishing spot.")
+
+    -- Jalankan ResetCharacter (akan menyebabkan mati / respawn)
+    if Rayfield.Flags["ResetCharacter"] and Rayfield.Flags["ResetCharacter"].Callback then
+        print("[System] 🔁 Performing automatic fishing reset...")
+        Rayfield.Flags["ResetCharacter"].Callback()
+    else
+        print("[System] ⚙️ Fallback reset via EquipToolRemote")
+        task.wait(1)
+        EquipToolRemote:FireServer(1)
+    end
+
+    print("[System] ⏳ Waiting for respawn to finish...")
+    local newChar, newHrp = waitForCharacter()
+    if not newHrp then
+        warn("[System] ⚠️ Failed to find HRP after respawn.")
+        return
+    end
+
+    task.wait(2)
+    Rayfield.Flags["AutoFishing"]:Set(true)
+    print("[System] ✅ AutoFishing re-enabled after respawn.")
+    newHrp.CFrame = cf
+    print("[System] 📍 Re-teleported after respawn.")
+end
+
+-- =========================================================
+-- Coordinates
+
+local spotAncientJungle = CFrame.lookAt(
+    Vector3.new(1497.642822265625, 7.417082786560059, -437.892333984375),
+    Vector3.new(1497.642822265625, 7.417082786560059, -437.892333984375)
+        + Vector3.new(0.9999828338623047, 1.9449498012136246e-08, 0.0058635021559894085)
+)
+
+local spotSacredTemple = CFrame.lookAt(
+    Vector3.new(1479.1177978515625, -22.125001907348633, -666.4100341796875),
+    Vector3.new(1479.1177978515625, -22.125001907348633, -666.4100341796875)
+        + Vector3.new(0.993732750415802, 4.227080196983479e-08, -0.11178195476531982)
+)
+
+local spotRobotKraken = CFrame.lookAt(
+    Vector3.new(-3764.026, -135.074, -994.416),
+    Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, -8.57e-08, 0.720)
+)
+
 -- =========================================================
 -- 🔁 State
 local autoFishConn
@@ -181,6 +250,7 @@ MainTab:CreateToggle({
 
 MainTab:CreateButton({
     Name = "Reset Character",
+    Flag = "ResetCharacter",
     Callback = function()
         Rayfield.Flags["AutoFishing"]:Set(false)
         local player = game.Players.LocalPlayer
@@ -245,13 +315,7 @@ MainTab:CreateToggle({
     end,
 })
 
-local Section = MainTab:CreateSection("Auto Events Megalodon, Ghost Worm, Wormhole, Ghost Shark Hunt, Shark Hunt")
-
---// 📍 Best Spot lokasi default
-local bestSpotCFrame = CFrame.lookAt(
-    Vector3.new(-3764.026, -135.074, -994.416),
-    Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, -8.57e-08, 0.720)
-)
+local Section = MainTab:CreateSection("Farming FISH")
 
 local player = game.Players.LocalPlayer
 
@@ -315,19 +379,11 @@ local function removePropsPlatform()
     propsPlatform = nil
 end
 
-local function safeTeleport(cframeTarget)
-    local char = player.Character or player.CharacterAdded:Wait()
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.CFrame = cframeTarget + Vector3.new(0, 15, 0)
-    end
-end
-
 --// 🌀 Start / Stop Loop
 local function startAutoMegalodon()
     if loopTask then return end -- biar ga dobel
 
-    safeTeleport(bestSpotCFrame)
+    goToSpot(spotSacredTemple + Vector3.new(0, 2, 0))
     activeMode = "BestSpot"
 
     loopTask = task.spawn(function()
@@ -338,15 +394,15 @@ local function startAutoMegalodon()
                 if targetCFrame then
                     if activeMode ~= "Megalodon" then
                         createPropsPlatform(targetCFrame)
-                        safeTeleport(propsPlatform.CFrame)
+                        goToSpot(propsPlatform.CFrame + Vector3.new(0, 10, 0))
                         activeMode = "Megalodon"
                     else
                         local char = player.Character
                         if char and char:FindFirstChild("HumanoidRootPart") then
                             local hrp = char.HumanoidRootPart
                             local dist = (hrp.Position - propsPlatform.Position).Magnitude
-                            if dist > 5 then
-                                safeTeleport(propsPlatform.CFrame)
+                            if dist > 7 then
+                                goToSpot(propsPlatform.CFrame + Vector3.new(0, 10, 0))
                             end
                         end
                     end
@@ -354,7 +410,7 @@ local function startAutoMegalodon()
                     if activeMode ~= "BestSpot" then
                         print("📍 Megalodon hilang → teleport ke BestSpot")
                         removePropsPlatform()
-                        safeTeleport(bestSpotCFrame)
+                        goToSpot(spotSacredTemple + Vector3.new(0, 2, 0))
                         activeMode = "BestSpot"
                     end
                 end
@@ -374,7 +430,7 @@ end
 
 --// 🟢 Toggle di Rayfield
 MainTab:CreateToggle({
-    Name = "Auto Megalodon Hunt",
+    Name = "Farm Megalodon",
     CurrentValue = false,
     Flag = "MegalodonHunt",
     Callback = function(state)
@@ -397,140 +453,84 @@ MainTab:CreateToggle({
         end
     end,
 })
+-- =========================================================
+-- Robot Kraken
 
-
---// 🎯 Ambil Model dari MENU RINGS
-local function getMenuRingsModel()
-    local menuRings = workspace:FindFirstChild("!!! MENU RINGS")
-    if not menuRings then return nil end
-
-    -- 🔹 Coba jalur Props.Model
-    local props = menuRings:FindFirstChild("Props")
-    if props and props:FindFirstChild("Model") then
-        local part = props.Model:FindFirstChildWhichIsA("BasePart", true)
-        if part then
-            return part.CFrame
-        end
-    end
-
-    -- 🔹 Coba jalur GetChildren()[20].Model
-    local child20 = menuRings:GetChildren()[20]
-    if child20 and child20:FindFirstChild("Model") then
-        local part = child20.Model:FindFirstChildWhichIsA("BasePart", true)
-        if part then
-            return part.CFrame
-        end
-    end
-
-    return nil -- ❌ Model tidak ditemukan
-end
-
---// 🪵 Platform Props
-local modelPlatform
-local activeModelMode = "BestSpot"
-local loopModelTask
-
-local function createModelPlatform(cframeTarget)
-    if modelPlatform and modelPlatform.Parent then
-        modelPlatform:Destroy()
-    end
-    modelPlatform = Instance.new("Part")
-    modelPlatform.Size = Vector3.new(12, 1, 12)
-    modelPlatform.Anchored = true
-    modelPlatform.CanCollide = true
-    modelPlatform.Transparency = 1
-    modelPlatform.Name = "[RF]ModelPlatform"
-    modelPlatform.CFrame = cframeTarget + Vector3.new(0, 5, 0)
-    modelPlatform.Parent = workspace
-end
-
-local function removeModelPlatform()
-    if modelPlatform and modelPlatform.Parent then
-        modelPlatform:Destroy()
-    end
-    modelPlatform = nil
-end
-
-local function safeTeleportModel(cframeTarget)
-    local char = player.Character or player.CharacterAdded:Wait()
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.CFrame = cframeTarget + Vector3.new(0, 20, 0)
-    end
-end
-
---// 🌀 Start / Stop Loop
-local function startAutoModel()
-    if loopModelTask then return end -- biar ga dobel
-
-    safeTeleportModel(bestSpotCFrame)
-    activeModelMode = "BestSpot"
-
-    loopModelTask = task.spawn(function()
-        while task.wait(1) do
-            pcall(function()
-                local targetCFrame = getMenuRingsModel()
-
-                if targetCFrame then
-                    if activeModelMode ~= "Model" then
-                        createModelPlatform(targetCFrame)
-                        safeTeleportModel(modelPlatform.CFrame)
-                        activeModelMode = "Model"
-                    else
-                        local char = player.Character
-                        if char and char:FindFirstChild("HumanoidRootPart") then
-                            local hrp = char.HumanoidRootPart
-                            local dist = (hrp.Position - modelPlatform.Position).Magnitude
-                            if dist > 20 then
-                                safeTeleportModel(modelPlatform.CFrame)
-                            end
-                        end
-                    end
-                else
-                    if activeModelMode ~= "BestSpot" then
-                        removeModelPlatform()
-                        safeTeleportModel(bestSpotCFrame)
-                        activeModelMode = "BestSpot"
-                    end
-                end
-            end)
-        end
-    end)
-end
-
-local function stopAutoModel()
-    if loopModelTask then
-        task.cancel(loopModelTask)
-        loopModelTask = nil
-    end
-    removeModelPlatform()
-    activeModelMode = "BestSpot"
-end
-
---// 🟢 Toggle di Rayfield
 MainTab:CreateToggle({
-    Name = "Auto Worm Ghost or Wormhole Hunt",
+    Name = "Farm Robot Kraken",
     CurrentValue = false,
-    Flag = "MenuRingsModel",
+    Flag = "AutoRobotKraken",
     Callback = function(state)
-        if state then
-            startAutoModel()
+        _G.AutoRobotKraken = state
 
-            task.wait(5)
-
-            -- ✅ Paksa toggle Auto Fishing ikut nyala
-            if not Rayfield.Flags["AutoFishing"].CurrentValue then
-                Rayfield.Flags["AutoFishing"]:Set(true)
-            end
-        else
-            stopAutoModel()
-            -- 🔴 Matikan Auto Fishing juga
+        if not state then
             if Rayfield.Flags["AutoFishing"].CurrentValue then
                 Rayfield.Flags["AutoFishing"]:Set(false)
             end
+            return
         end
+
+        goToSpot(spotRobotKraken)
+
+        task.spawn(function()
+            while _G.AutoRobotKraken do
+                if not Rayfield.Flags["AutoFishing"].CurrentValue then
+                    Rayfield.Flags["AutoFishing"]:Set(true)
+                end
+                task.wait(5)
+            end
+        end)
     end,
 })
+
+-- =========================================================
+-- Elshark Gran Maja
+
+MainTab:CreateToggle({
+    Name = "Farm Elshark Gran Maja",
+    CurrentValue = false,
+    Flag = "AutoElsharkGranMaja",
+    Callback = function(state)
+        _G.AutoElsharkGranMaja = state
+
+        if not state then
+            if Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(false)
+            end
+            return
+        end
+
+        -- 🔍 Cek status pintu Sacred Temple
+        local templeDoor = workspace:FindFirstChild("JUNGLE INTERACTIONS")
+            and workspace["JUNGLE INTERACTIONS"]:FindFirstChild("Doors")
+            and workspace["JUNGLE INTERACTIONS"].Doors:FindFirstChild("TempleDoor")
+
+        if templeDoor and templeDoor:FindFirstChild("DELETE_ME_AFTER_UNLOCK") then
+            Rayfield:Notify({
+                Title = "Access Denied",
+                Content = "Open the Sacred Temple door first or complete the Artifact Quest.",
+                Duration = 5,
+                Image = "triangle-alert",
+            })
+            _G.AutoElsharkGranMaja = false
+            Rayfield.Flags["AutoElsharkGranMaja"]:Set(false)
+            return
+        end
+
+        -- ✅ Kalau pintu sudah terbuka, lanjut teleport dan mancing
+        goToSpot(spotSacredTemple)
+
+        task.spawn(function()
+            while _G.AutoElsharkGranMaja do
+                if not Rayfield.Flags["AutoFishing"].CurrentValue then
+                    Rayfield.Flags["AutoFishing"]:Set(true)
+                end
+                task.wait(5)
+            end
+        end)
+    end,
+})
+
 
 -- =========================================================
 -- Auto Sell
@@ -1483,57 +1483,6 @@ local function forceRejoin()
     ts:Teleport(game.PlaceId, plr)
 end
 
--- =========================================================
--- Respawn-safe utilities
-
-local function waitForCharacter()
-    local plr = game.Players.LocalPlayer
-    local char = plr.Character or plr.CharacterAdded:Wait()
-    local hrp = char:WaitForChild("HumanoidRootPart", 10)
-    if not hrp then
-        warn("[System] ⚠️ Character respawn timeout — HRP not found.")
-        return nil
-    end
-    return char, hrp
-end
-
-local function goToSpot(cf)
-    local plr = game.Players.LocalPlayer
-    local char, hrp = waitForCharacter()
-    if not hrp then return end
-
-    -- Matikan AutoFishing dulu biar aman
-    if Rayfield.Flags["AutoFishing"] and Rayfield.Flags["AutoFishing"].CurrentValue then
-        Rayfield.Flags["AutoFishing"]:Set(false)
-    end
-
-    task.wait(0.3)
-    hrp.CFrame = cf
-    print("[System] 🚶 Teleported to new fishing spot.")
-
-    -- Jalankan ResetFishing (akan menyebabkan mati / respawn)
-    if Rayfield.Flags["ResetFishing"] and Rayfield.Flags["ResetFishing"].Callback then
-        print("[System] 🔁 Performing automatic fishing reset...")
-        Rayfield.Flags["ResetFishing"].Callback()
-    else
-        print("[System] ⚙️ Fallback reset via EquipToolRemote")
-        EquipToolRemote:FireServer(1)
-    end
-
-    print("[System] ⏳ Waiting for respawn to finish...")
-    local newChar, newHrp = waitForCharacter()
-    if not newHrp then
-        warn("[System] ⚠️ Failed to find HRP after respawn.")
-        return
-    end
-
-    task.wait(2)
-    Rayfield.Flags["AutoFishing"]:Set(true)
-    print("[System] ✅ AutoFishing re-enabled after respawn.")
-    newHrp.CFrame = cf
-    print("[System] 📍 Re-teleported after respawn.")
-end
-
 -- Auto resume autofishing after respawn
 local plr = game.Players.LocalPlayer
 plr.CharacterAdded:Connect(function(newChar)
@@ -1549,21 +1498,6 @@ plr.CharacterAdded:Connect(function(newChar)
         end
     end)
 end)
-
--- =========================================================
--- Coordinates
-
-local spotAncientJungle = CFrame.lookAt(
-    Vector3.new(1497.642822265625, 7.417082786560059, -437.892333984375),
-    Vector3.new(1497.642822265625, 7.417082786560059, -437.892333984375)
-        + Vector3.new(0.9999828338623047, 1.9449498012136246e-08, 0.0058635021559894085)
-)
-
-local spotSacredTemple = CFrame.lookAt(
-    Vector3.new(1479.1177978515625, -22.125001907348633, -666.4100341796875),
-    Vector3.new(1479.1177978515625, -22.125001907348633, -666.4100341796875)
-        + Vector3.new(0.993732750415802, 4.227080196983479e-08, -0.11178195476531982)
-)
 
 -- =========================================================
 -- Main Toggle
@@ -1987,26 +1921,6 @@ local bestSpotSysyphus = CFrame.lookAt(
     Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, 0, 0.720)
 )
 
--- helper to teleport ke spot
-local function goToSpot(cf)
-    local plr = game.Players.LocalPlayer
-    local char = plr.Character or plr.CharacterAdded:Wait()
-    local hrp = char:WaitForChild("HumanoidRootPart", 5)
-    if hrp then
-        hrp.CFrame = cf
-        task.wait(1) -- buffer agar posisi stabil
-    end
-
-    -- equip rod (slot 1)
-    EquipToolRemote:FireServer(1)
-
-    -- tunggu rod benar-benar muncul
-    local timeout = tick() + 3
-    repeat
-        task.wait(0.2)
-    until (plr.Character and plr.Character:FindFirstChild("!!!EQUIPPED_TOOL!!!")) or tick() > timeout
-end
-
 -- Auto Quest toggle
 QuestTab:CreateToggle({
     Name = "⚡ Auto Quest (Deep Sea)",
@@ -2016,7 +1930,6 @@ QuestTab:CreateToggle({
         _G.AutoQuest = Value
 
         if not Value then
-            -- matikan AutoFishing juga lewat toggle utama
             if Rayfield.Flags["AutoFishing"].CurrentValue then
                 Rayfield.Flags["AutoFishing"]:Set(false)
             end
@@ -2029,41 +1942,30 @@ QuestTab:CreateToggle({
                 local p1 = parsePercentFromText(Label1.Text)
                 local p2 = parsePercentFromText(Label2.Text)
                 local p3 = parsePercentFromText(Label3.Text)
-                local overall = parsePercentFromText(Progress.Text)
 
                 if p1 < 100 then
                     if currentStep ~= 1 then
                         currentStep = 1
-                        print("[Quest] Catch 300 Rare/Epic (Treasure Room) — " .. tostring(p1) .. "%")
+                        goToSpot(bestSpotTreasure)
                     end
-                    goToSpot(bestSpotTreasure)
 
                 elseif p2 < 100 then
                     if currentStep ~= 2 then
                         currentStep = 2
-                        print("[Quest] Catch 3 Mythic (Sisyphus Statue) — " .. tostring(p2) .. "%")
+                        goToSpot(bestSpotSysyphus)
                     end
-                    goToSpot(bestSpotSysyphus)
 
                 elseif p3 < 100 then
                     if currentStep ~= 3 then
                         currentStep = 3
-                        print("[Quest] Catch 1 SECRET (Sisyphus Statue) — " .. tostring(p3) .. "%")
+                        goToSpot(bestSpotSysyphus)
                     end
-                    goToSpot(bestSpotSysyphus)
 
                 else
                     if currentStep ~= 4 then
                         currentStep = 4
-                        print("[Quest] ✅ All Deep Sea quests completed (overall " .. tostring(overall) .. "%). Staying at Sisyphus.")
+                        goToSpot(bestSpotSysyphus)
                     end
-                    goToSpot(bestSpotSysyphus)
-                end
-
-                -- pastikan AutoFishing ON lewat toggle utama
-                if not Rayfield.Flags["AutoFishing"].CurrentValue then
-                    Rayfield.Flags["AutoFishing"]:Set(true)
-                    print("[Quest] Auto Fishing enabled from Main Tab.")
                 end
 
                 task.wait(5)
