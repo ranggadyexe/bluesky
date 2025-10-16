@@ -284,6 +284,79 @@ MainTab:CreateToggle({
 })
 
 
+--// 🔻 Disable VFX on new objects
+local function disableVFX(obj)
+    if obj:IsA("ParticleEmitter")
+    or obj:IsA("Trail")
+    or obj:IsA("Beam")
+    or obj:IsA("Fire")
+    or obj:IsA("Smoke")
+    or obj:IsA("Sparkles") then
+        obj.Enabled = false
+    end
+end
+
+--// 🔻 Convert parts to Plastic
+local function simplifyPart(obj)
+    if obj:IsA("BasePart") then
+        obj.Material = Enum.Material.Plastic
+    end
+end
+
+--// 🔻 Apply low graphics recursively
+local function applyLowGraphics(container)
+    for _, obj in ipairs(container:GetDescendants()) do
+        disableVFX(obj)
+        simplifyPart(obj)
+    end
+end
+
+--// 🟢 Toggle Low Graphic Mode
+MainTab:CreateToggle({
+    Name = "Low Graphic Mode (Rejoin to reset)",
+    CurrentValue = false,
+    Flag = "LowGraphics",
+    Callback = function(state)
+        if state then
+
+            -- 🔅 Atur Lighting
+            local lighting = game:GetService("Lighting")
+            lighting.GlobalShadows = false
+            lighting.Brightness = 1
+            lighting.FogEnd = 1e6
+            lighting.FogStart = 0
+            lighting.EnvironmentSpecularScale = 0
+            lighting.EnvironmentDiffuseScale = 0
+            lighting.Ambient = Color3.new(1, 1, 1)
+            lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+
+            -- 🔨 Destroy semua VFX di ReplicatedStorage
+            local rs = game:GetService("ReplicatedStorage")
+            if rs:FindFirstChild("VFX") then
+                rs.VFX:ClearAllChildren()
+            end
+
+            -- 🌍 Apply ke semua container
+            local containers = {
+                workspace,
+                lighting,
+                rs,
+                game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+            }
+            for _, c in ipairs(containers) do
+                applyLowGraphics(c)
+
+                -- listen jika ada object baru masuk
+                c.DescendantAdded:Connect(function(obj)
+                    disableVFX(obj)
+                    simplifyPart(obj)
+                end)
+            end
+        else
+        end
+    end,
+})
+
 --======================================================================================
 
 -- Services
@@ -312,7 +385,9 @@ local SeedList = {
     "🪴 Carnivorous Plant Seed",
     "🥕 Mr Carrot Seed",
     "🍅 Tomatrio Seed",
-    "🍄 Shroombino Seed"
+    "🍄 Shroombino Seed",
+    "🥭 Mango Seed",
+    "🍋 King Limone Seed",
 }
 
 -- Hapus emoji (ambil teks setelah spasi pertama)

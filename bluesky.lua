@@ -66,6 +66,7 @@ local FishingCompleteRemote = netRoot:WaitForChild("RE/FishingCompleted")
 local FishCaughtRemote      = netRoot:WaitForChild("RE/FishCaught")
 local EquipToolRemote       = netRoot:WaitForChild("RE/EquipToolFromHotbar")
 local UnequipToolRemote     = netRoot:WaitForChild("RE/UnequipToolFromHotbar")
+local redeemRemote          = netRoot:WaitForChild("RF/RedeemCode")
 
 -- =========================================================
 -- 🎣 UI Section
@@ -920,7 +921,58 @@ local Toggle = MainTab:CreateToggle({
         end
     end,
 })
-]]
+]]-- =========================================================
+-- Redeem code
+local Section = AutoTab:CreateSection("Auto Redeem All Codes")
+
+local Codes = {
+    "BLAMETALON",
+    "SORRY",
+    "TRAVEL",
+    "SHARKSSS",
+    "WORMHYPE",
+    "MEGA",
+    "ARMOR",
+    "SHARKSSS",
+    "100ML",
+    "MUTATE",
+    "WOWSPINS",
+    "FREEBIES",
+    "SORRYSPINS",
+    "THEWHEEL",
+    "100M",
+    "MUTATE",
+    "LOST",
+    "EGGS",
+    "HUNTING",
+    "TROPICAL",
+    "FISHING",
+    "BIGUPD",
+    "VALENTINE",
+    "CONSOLE",
+    "LOBSTAH",
+    "XMAS2024"
+}
+
+AutoTab:CreateButton({
+    Name = "🎁 Redeem All Codes",
+    Callback = function()
+        for _, code in ipairs(Codes) do
+            pcall(function()
+                redeemRemote:InvokeServer(code)
+            end)
+            task.wait(0.3)
+        end
+
+        Rayfield:Notify({
+            Title = "Redeem",
+            Content = "Redeemed all codes",
+            Duration = 3,
+            Image = "circle-check-big"
+        })
+    end
+})
+
 -- =========================================================
 -- Trade Fish
 local Section = AutoTab:CreateSection("Auto Trade")
