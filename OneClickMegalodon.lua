@@ -366,10 +366,11 @@ local function buildOverlay()
 
 	-- 🔘 Toggle button (ALWAYS visible)
 	local ToggleButton = Instance.new("TextButton")
-	ToggleButton.Size = UDim2.new(0, 60, 0, 60)
-	ToggleButton.Position = UDim2.new(0, 20, 0, 100)
+	ToggleButton.Size = UDim2.new(0, 100, 0, 100)
+	ToggleButton.Position = UDim2.new(0, 20, 0, 400)
 	ToggleButton.Text = "💩"
 	ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	ToggleButton.BackgroundTransparency = 1
 	ToggleButton.TextScaled = true
 	ToggleButton.TextColor3 = Color3.new(1, 1, 1)
 	ToggleButton.Parent = ScreenGui
@@ -426,8 +427,8 @@ local function buildOverlay()
 
 	-- 🔴 Indicator circle (fishing status)
 	local Indicator = Instance.new("Frame")
-	Indicator.Size = UDim2.new(0, 60, 0, 60)
-	Indicator.Position = UDim2.new(0, 20, 1, -425)
+	Indicator.Size = UDim2.new(0, 100, 0, 100)
+	Indicator.Position = UDim2.new(0, 20, 1, -500)
 	Indicator.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
 	Indicator.BorderSizePixel = 0
 	Indicator.BackgroundTransparency = 0.1
@@ -448,12 +449,42 @@ local function buildOverlay()
 	end)
 
 	task.spawn(function()
-		while task.wait(1) do
-			if tick() - lastCatch > 15 then
-				Indicator.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-			end
-		end
-	end)
+        local waitingReset = false
+        while task.wait(1) do
+            local elapsed = tick() - lastCatch
+
+            if elapsed > 15 and not waitingReset then
+                Indicator.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+                warn("[AutoFishing] ❌ Tidak ada ikan >15s → reset karakter.")
+                
+                waitingReset = true
+                resetCharacter()
+
+                -- tunggu 10 detik untuk monitor apakah sudah hijau lagi
+                task.spawn(function()
+                    local startCheck = tick()
+                    while tick() - startCheck < 30 do
+                        if tick() - lastCatch < 5 then
+                            -- sudah hijau (ikan tertangkap)
+                            waitingReset = false
+                            print("[AutoFishing] ✅ Ikan tertangkap, batalkan reset lanjutan.")
+                            break
+                        end
+                        task.wait(1)
+                    end
+
+                    -- jika setelah 10 detik masih tidak dapat ikan
+                    if waitingReset then
+                        print("[AutoFishing] ⚠️ Masih macet setelah 10s, reset ulang.")
+                        resetCharacter()
+                        waitingReset = false
+                    end
+                end)
+            elseif elapsed <= 15 then
+                Indicator.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
+            end
+        end
+    end)
 
 	-- 🎣 Data updates
 	task.spawn(function()
@@ -519,7 +550,7 @@ pcall(buildOverlay)
 
 -- 🔁 Rebuild otomatis setelah respawn
 Player.CharacterAdded:Connect(function()
-	task.wait(3) -- tunggu karakter muncul
+	task.wait(1) -- tunggu karakter muncul
 	pcall(buildOverlay)
 	print("[UI] 🔁 Overlay rebuilt after respawn.")
 end)
