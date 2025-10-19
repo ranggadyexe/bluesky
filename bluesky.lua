@@ -200,17 +200,30 @@ MainTab:CreateToggle({
             end)
         end)
 
-        -- 🧠 Safety thread (restart jika macet)
+        -- 🧠 Safety thread (restart & auto reset jika macet)
         safetyThread = task.spawn(function()
             while _G.AutoFish do
-                if tick() - lastCatch > 10 then
-                    print("[AutoFishing] ⚠️ Restarting fishing (stuck).")
-                    unequipRod()
-                    task.wait(0.1)
-                    equipRod()
-                    task.wait(0.1)
-                    startFishing()
-                    lastCatch = tick()
+                local elapsed = tick() - lastCatch
+                if elapsed > 10 then
+                    warn(string.format("[AutoFishing] ⚠️ No catch for %.1fs", elapsed))
+
+                    if elapsed > 15 then
+                        warn("[AutoFishing] ❌ No fish caught for 15s → Resetting character.")
+                        Rayfield.Flags["ResetCharacter"].Callback()  -- panggil tombol reset langsung
+                        task.wait(3) -- beri waktu respawn
+                        equipRod()
+                        task.wait(0.3)
+                        startFishing()
+                        lastCatch = tick()
+                    else
+                        -- coba restart pancing dulu
+                        unequipRod()
+                        task.wait(0.1)
+                        equipRod()
+                        task.wait(0.1)
+                        startFishing()
+                        lastCatch = tick()
+                    end
                 end
                 task.wait(1)
             end
