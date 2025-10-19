@@ -333,4 +333,196 @@ task.spawn(function()
     startAutoFishing()
 end)
 
+-- =========================================================
+-- 🧠 Handle Respawn: rebuild UI after CharacterAdded
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+
+local Client = require(ReplicatedStorage.Packages.Replion).Client
+local Data = Client:WaitReplion("Data")
+
+local netRoot = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
+local FishCaughtRemote = netRoot:WaitForChild("RE/FishCaught")
+
+local function buildOverlay()
+	-- Hapus overlay lama jika ada
+	local old = PlayerGui:FindFirstChild("FishingOverlay")
+	if old then old:Destroy() end
+
+	-- Ambil avatar player
+	local thumbType = Enum.ThumbnailType.HeadShot
+	local thumbSize = Enum.ThumbnailSize.Size420x420
+	local thumbUrl, _ = Players:GetUserThumbnailAsync(Player.UserId, thumbType, thumbSize)
+
+	-- GUI setup
+	local ScreenGui = Instance.new("ScreenGui")
+	ScreenGui.Name = "FishingOverlay"
+	ScreenGui.IgnoreGuiInset = true
+	ScreenGui.ResetOnSpawn = false
+	ScreenGui.Parent = PlayerGui
+
+	-- 🔘 Toggle button (ALWAYS visible)
+	local ToggleButton = Instance.new("TextButton")
+	ToggleButton.Size = UDim2.new(0, 60, 0, 60)
+	ToggleButton.Position = UDim2.new(0, 20, 0, 100)
+	ToggleButton.Text = "💩"
+	ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	ToggleButton.TextScaled = true
+	ToggleButton.TextColor3 = Color3.new(1, 1, 1)
+	ToggleButton.Parent = ScreenGui
+	ToggleButton.ZIndex = 50
+	local togCorner = Instance.new("UICorner", ToggleButton)
+	togCorner.CornerRadius = UDim.new(1, 0)
+
+	-- 🌌 Background
+	local DarkBg = Instance.new("Frame")
+	DarkBg.Size = UDim2.new(1, 0, 1, 0)
+	DarkBg.BackgroundColor3 = Color3.new(0, 0, 0)
+	DarkBg.BackgroundTransparency = 0
+	DarkBg.Parent = ScreenGui
+
+	-- 📦 Container for center info
+	local Center = Instance.new("Frame")
+	Center.AnchorPoint = Vector2.new(0.5, 0.5)
+	Center.Position = UDim2.new(0.5, 0, 0.5, 0)
+	Center.Size = UDim2.new(0, 400, 0, 450)
+	Center.BackgroundTransparency = 1
+	Center.Parent = DarkBg
+
+	-- Avatar image
+	local Avatar = Instance.new("ImageLabel")
+	Avatar.Size = UDim2.new(0, 120, 0, 120)
+	Avatar.AnchorPoint = Vector2.new(0.5, 0)
+	Avatar.Position = UDim2.new(0.5, 0, 0, 0)
+	Avatar.BackgroundTransparency = 1
+	Avatar.Image = thumbUrl
+	Avatar.Parent = Center
+
+	-- Text factory
+	local function makeLabel(text, yOffset)
+		local lbl = Instance.new("TextLabel")
+		lbl.AnchorPoint = Vector2.new(0.5, 0)
+		lbl.Position = UDim2.new(0.5, 0, 0, yOffset)
+		lbl.Size = UDim2.new(1, 0, 0, 35)
+		lbl.Text = text
+		lbl.TextColor3 = Color3.new(1, 1, 1)
+		lbl.BackgroundTransparency = 1
+		lbl.Font = Enum.Font.GothamBold
+		lbl.TextScaled = true
+		lbl.Parent = Center
+		return lbl
+	end
+
+	-- Create text labels
+	local Username = makeLabel(Player.Name, 130)
+	local Level = makeLabel("Level: ?", 170)
+	local FishCaught = makeLabel("Fish Caught: 0", 210)
+	local Rod = makeLabel("Rod: ?", 250)
+	local Bait = makeLabel("Bait: ?", 290)
+	local Coins = makeLabel("Coins: ?", 330)
+
+	-- 🔴 Indicator circle (fishing status)
+	local Indicator = Instance.new("Frame")
+	Indicator.Size = UDim2.new(0, 60, 0, 60)
+	Indicator.Position = UDim2.new(0, 20, 1, -425)
+	Indicator.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+	Indicator.BorderSizePixel = 0
+	Indicator.BackgroundTransparency = 0.1
+	Indicator.ZIndex = 50
+	Indicator.Parent = ScreenGui
+	local indCorner = Instance.new("UICorner", Indicator)
+	indCorner.CornerRadius = UDim.new(1, 0)
+
+	-- 💤 Indicator logic + FishCaught counter
+	local lastCatch = tick()
+	local totalCaught = 0
+
+	FishCaughtRemote.OnClientEvent:Connect(function()
+		lastCatch = tick()
+		totalCaught = totalCaught + 1
+		FishCaught.Text = "Fish Caught: " .. tostring(totalCaught)
+		Indicator.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
+	end)
+
+	task.spawn(function()
+		while task.wait(1) do
+			if tick() - lastCatch > 15 then
+				Indicator.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+			end
+		end
+	end)
+
+	-- 🎣 Data updates
+	task.spawn(function()
+		while task.wait(1) do
+			pcall(function()
+				if Data.Data.Level then
+					Level.Text = "Level: " .. tostring(Data.Data.Level)
+				end
+				if Data.Data.Coins then
+					Coins.Text = "Coins: " .. tostring(Data.Data.Coins)
+				end
+
+				local rods = Data.Data.Inventory["Fishing Rods"]
+				local eq = Data.Data.EquippedItems and Data.Data.EquippedItems[1]
+				local rodName = "?"
+				if eq then
+					for _, rod in pairs(rods) do
+						if rod.UUID == eq then
+							local itemsFolder = ReplicatedStorage:FindFirstChild("Items")
+							if itemsFolder then
+								for _, item in ipairs(itemsFolder:GetChildren()) do
+									local info = require(item)
+									if info.Data and info.Data.Id == rod.Id then
+										rodName = info.Data.Name
+										break
+									end
+								end
+							end
+						end
+					end
+				end
+				Rod.Text = "Rod: " .. rodName
+
+				local baitName = "?"
+				local baitId = Data.Data.EquippedBaitId
+				if baitId then
+					local baitFolder = ReplicatedStorage:FindFirstChild("Baits")
+					if baitFolder then
+						for _, b in ipairs(baitFolder:GetChildren()) do
+							local info = require(b)
+							if info.Data and info.Data.Id == baitId then
+								baitName = info.Data.Name
+								break
+							end
+						end
+					end
+				end
+				Bait.Text = "Bait: " .. baitName
+			end)
+		end
+	end)
+
+	-- 🧭 Toggle visibility
+	local visible = true
+	ToggleButton.MouseButton1Click:Connect(function()
+		visible = not visible
+		DarkBg.Visible = visible
+	end)
+end
+
+-- ✅ Pertama kali jalankan overlay
+pcall(buildOverlay)
+
+-- 🔁 Rebuild otomatis setelah respawn
+Player.CharacterAdded:Connect(function()
+	task.wait(3) -- tunggu karakter muncul
+	pcall(buildOverlay)
+	print("[UI] 🔁 Overlay rebuilt after respawn.")
+end)
+
+
 print("[ONECLICK] ✅ Fish It v3 Loaded: Megalodon, AutoFishing, AutoComplete, AutoSell, AntiAFK, RemoveGUI, LowGraphics active.")
