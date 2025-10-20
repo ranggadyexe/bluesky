@@ -1,6 +1,6 @@
 -- =========================================================
--- 🐟 OneClick Fish It v3
--- Auto Megalodon + Auto Fishing + Auto Complete + Auto Sell + AntiAFK + RemoveGUI + LowGraphics
+-- 🎃 OneClick Halloween Auto Fish
+-- Auto Fishing + Auto Complete + Auto Sell + AntiAFK + RemoveGUI + LowGraphics
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -25,36 +25,32 @@ local UnequipToolRemote     = netRoot:WaitForChild("RE/UnequipToolFromHotbar")
 local SellAll               = netRoot:WaitForChild("RF/SellAllItems")
 
 -- =========================================================
--- 🧭 Simple Teleport Function (no reset / respawn)
+-- 🧭 Simple Teleport Function
 local function waitForCharacter()
     local plr = game.Players.LocalPlayer
     local char = plr.Character or plr.CharacterAdded:Wait()
     local hrp = char:WaitForChild("HumanoidRootPart", 10)
-    if not hrp then
-        warn("[System] ⚠️ Character not found.")
-        return nil, nil
-    end
     return char, hrp
 end
 
 local function goToSpot(cf)
     local _, hrp = waitForCharacter()
-    if not hrp then return end
-
-    hrp.CFrame = cf
-    print(string.format("[System] 📍 Teleported to spot (%.1f, %.1f, %.1f)", cf.Position.X, cf.Position.Y, cf.Position.Z))
+    if hrp then
+        hrp.CFrame = cf
+        print(string.format("[System] 📍 Teleported to (%.1f, %.1f, %.1f)", cf.Position.X, cf.Position.Y, cf.Position.Z))
+    end
 end
 
 -- =========================================================
--- Coordinates Sacred Temple
-local spotSacredTemple = CFrame.lookAt(
-    Vector3.new(1479.1177978515625, -22.125001907348633, -666.4100341796875),
-    Vector3.new(1479.1177978515625, -22.125001907348633, -666.4100341796875)
-        + Vector3.new(0.993732750415802, 4.227080196983479e-08, -0.11178195476531982)
+-- 🎃 Lokasi Halloween
+local spotHalloween = CFrame.lookAt(
+    Vector3.new(2105.46630859375, 81.03092956542969, 3295.840087890625),
+    Vector3.new(2105.46630859375, 81.03092956542969, 3295.840087890625)
+        + Vector3.new(0.9843165278434753, -4.2261455446279683e-10, 0.17641150951385498)
 )
 
 -- =========================================================
--- 💤 Anti AFK (always on)
+-- 💤 Anti AFK
 task.spawn(function()
     player.Idled:Connect(function()
         VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
@@ -64,7 +60,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- 💰 Auto Sell (loop tiap 10 detik)
+-- 💰 Auto Sell
 task.spawn(function()
     while task.wait(10) do
         pcall(function()
@@ -74,7 +70,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- ⚡ Auto Complete Fishing (always on)
+-- ⚡ Auto Complete Fishing
 task.spawn(function()
     while task.wait(0.1) do
         pcall(function()
@@ -84,7 +80,7 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- 🎣 Auto Fishing (with reset if stuck)
+-- 🎣 Auto Fishing
 local function equipRod()
     EquipToolRemote:FireServer(1)
 end
@@ -99,24 +95,16 @@ end
 local function resetCharacter(targetCFrame)
     local char = player.Character
     if not char then return end
-
-    -- tentukan posisi terakhir (target dari Megalodon / SacredTemple)
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    local lastPos = targetCFrame or (hrp and hrp.CFrame) or spotSacredTemple
-
-    -- bunuh karakter (trigger respawn)
+    local lastPos = targetCFrame or (hrp and hrp.CFrame) or spotHalloween
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum then hum.Health = 0 end
 
-    -- tunggu respawn dan teleport balik
     local newChar = player.CharacterAdded:Wait()
     local newHrp = newChar:WaitForChild("HumanoidRootPart", 10)
     if not newHrp then return end
-
     task.wait(0.5)
-    newHrp.CFrame = lastPos  -- ⬅️ balik ke posisi terakhir
-
-    -- lanjut equip dan start fishing lagi
+    newHrp.CFrame = lastPos
     task.wait(0.3)
     pcall(function()
         equipRod()
@@ -125,116 +113,9 @@ local function resetCharacter(targetCFrame)
     end)
 end
 
-
--- =========================================================
--- 🦈 Auto Megalodon (integrated with goToSpot)
-local function getMegalodonProp()
-    local menuRings = workspace:FindFirstChild("!!! MENU RINGS")
-    if not menuRings then return nil end
-
-    -- 🔹 Cek langsung di Props
-    local props = menuRings:FindFirstChild("Props")
-    if props then
-        local target = props:FindFirstChild("Megalodon Hunt")
-        if target then
-            local part = target:FindFirstChildWhichIsA("BasePart", true)
-            if part then
-                return part.CFrame
-            end
-        end
-    end
-
-    -- 🔹 Fallback ke children index ke-19
-    local child19 = menuRings:GetChildren()[19]
-    if child19 then
-        local target = child19:FindFirstChild("Megalodon Hunt")
-        if target then
-            local part = target:FindFirstChildWhichIsA("BasePart", true)
-            if part then
-                return part.CFrame
-            end
-        end
-    end
-
-    return nil -- ❌ Tidak ada Megalodon Hunt
-end
-
--- =========================================================
--- 🪵 Platform Props
-local propsPlatform
-local activeMode = "BestSpot"
-local loopTask
-
-local function createPropsPlatform(cframeTarget)
-    if propsPlatform and propsPlatform.Parent then
-        propsPlatform:Destroy()
-    end
-    propsPlatform = Instance.new("Part")
-    propsPlatform.Size = Vector3.new(12, 1, 12)
-    propsPlatform.Anchored = true
-    propsPlatform.CanCollide = true
-    propsPlatform.Transparency = 1
-    propsPlatform.Name = "[RF]PropsPlatform"
-    propsPlatform.CFrame = cframeTarget + Vector3.new(0, 100, 0)
-    propsPlatform.Parent = workspace
-end
-
-local function removePropsPlatform()
-    if propsPlatform and propsPlatform.Parent then
-        propsPlatform:Destroy()
-    end
-    propsPlatform = nil
-end
-
--- =========================================================
--- 🌀 Start / Stop Loop
-local function startAutoMegalodon()
-    if loopTask then return end -- hindari dobel loop
-
-    goToSpot(spotSacredTemple + Vector3.new(0, 2, 0))
-    activeMode = "BestSpot"
-
-    loopTask = task.spawn(function()
-        while task.wait(1) do
-            pcall(function()
-                local targetCFrame = getMegalodonProp()
-
-                if targetCFrame then
-                    -- Megalodon terdeteksi
-                    if activeMode ~= "Megalodon" then
-                        createPropsPlatform(targetCFrame)
-                        goToSpot(propsPlatform.CFrame + Vector3.new(0, 100, 0))
-                        activeMode = "Megalodon"
-                        print("[Megalodon] 🦈 Found — teleporting high above spot!")
-                    end
-                else
-                    -- Megalodon hilang
-                    if activeMode ~= "BestSpot" then
-                        print("[Megalodon] 🌀 Megalodon gone → returning to BestSpot")
-                        removePropsPlatform()
-                        goToSpot(spotSacredTemple + Vector3.new(0, 2, 0))
-                        activeMode = "BestSpot"
-                    end
-                end
-            end)
-        end
-    end)
-end
-
-local function stopAutoMegalodon()
-    if loopTask then
-        task.cancel(loopTask)
-        loopTask = nil
-    end
-    removePropsPlatform()
-    activeMode = "BestSpot"
-end
-
-
--- =========================================================
--- 🎣 Start AutoFishing Loop
 local function startAutoFishing()
     task.spawn(function()
+        goToSpot(spotHalloween + Vector3.new(0, 2, 0))
         equipRod()
         task.wait(0.3)
         startFishing()
@@ -254,8 +135,7 @@ local function startAutoFishing()
             if elapsed > 10 then
                 if elapsed > 15 then
                     warn("[AutoFishing] ❌ Stuck >15s, resetting...")
-                    local cf = (propsPlatform and propsPlatform.CFrame + Vector3.new(0, 100, 0)) or spotSacredTemple
-                    resetCharacter(cf)
+                    resetCharacter(spotHalloween + Vector3.new(0, 2, 0))
                     lastCatch = tick()
                 else
                     unequipRod()
@@ -274,10 +154,10 @@ end
 -- 🧹 Remove Popup + Low Graphics
 local function removeGUI()
     local playerGui = player:WaitForChild("PlayerGui")
-    local smallNotif = playerGui:FindFirstChild("Small Notification")
-    if smallNotif then smallNotif:Destroy() end
-    local textNotif = playerGui:FindFirstChild("Text Notifications")
-    if textNotif then textNotif:Destroy() end
+    local s = playerGui:FindFirstChild("Small Notification")
+    if s then s:Destroy() end
+    local t = playerGui:FindFirstChild("Text Notifications")
+    if t then t:Destroy() end
 end
 
 local function disableVFX(obj)
@@ -342,10 +222,10 @@ end)
 task.spawn(function()
     removeGUI()
     enableLowGraphics()
-    startAutoMegalodon()
-    task.wait(3)
+    task.wait(1)
     startAutoFishing()
 end)
+
 
 -- =========================================================
 -- 🧠 Handle Respawn: rebuild UI after CharacterAdded
