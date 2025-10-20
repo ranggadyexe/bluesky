@@ -107,15 +107,6 @@ task.spawn(function()
 
         if not tradedSomething then
             notify("✅ Semua item sudah dikirim. Tidak ada lagi yang bisa di-trade.")
-            
-            task.wait(2)
-            notify("💤 Keluar dari game dalam 3 detik...")
-            task.wait(3)
-
-            -- keluar game aman
-            pcall(function()
-                LocalPlayer:Kick("✅ Semua item berhasil dikirim. Terima kasih.")
-            end)
             break
         end
     end
