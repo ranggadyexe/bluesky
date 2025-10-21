@@ -149,7 +149,6 @@ end
 
 -- =========================================================
 -- 💬 Webhook Configuration
-local HttpService = game:GetService("HttpService")
 
 local WEBHOOK_ENABLED = _G.WebhookEnabled ~= false  -- default aktif
 local WEBHOOK_URL = _G.Webhook or ""
@@ -256,11 +255,8 @@ local function startAutoFishing()
 	task.spawn(function()
         -- 🚀 Teleport awal
         goToSpot(spotHalloween + Vector3.new(0, 2, 0))
-        local _, hrp = waitForCharacter()
-        if not hrp then return end
-
-        -- 📍 Simpan posisi awal
-        local homePos = hrp.Position
+		local _, hrp = waitForCharacter()
+		if not hrp then return end
 
         -- 🧠 Start auto fishing
         equipRod()
@@ -268,23 +264,18 @@ local function startAutoFishing()
         startFishing()
         local lastCatch = tick()
 
-        -- 🧭 Guard teleport (anti kabur)
-        task.spawn(function()
-            while task.wait(2) do -- cek tiap 2 detik
-                pcall(function()
-                    if not _G.AutoGuard then break end
-                    local char = player.Character
-                    if char and char:FindFirstChild("HumanoidRootPart") then
-                        local hrp = char.HumanoidRootPart
-                        local dist = getDistance(hrp.Position, homePos)
-                        if dist > 5 then
-                            print(string.format("[AutoGuard] ⚠️ Keluar area (%.1f stud), kembali ke spot!", dist))
-                            hrp.CFrame = spotHalloween + Vector3.new(0, 2, 0)
-                        end
-                    end
-                end)
-            end
-        end)
+        -- 🧭 Penjaga posisi (kalau keluar area >5 stud, teleport balik)
+		task.spawn(function()
+			while task.wait(2) do
+				pcall(function()
+					local dist = (hrp.Position - spotHalloween.Position).Magnitude
+					if dist > 5 then
+						print(string.format("[AutoGuard] ⚠️ Keluar area (%.1f stud), teleport balik!", dist))
+						hrp.CFrame = spotHalloween + Vector3.new(0, 2, 0)
+					end
+				end)
+			end
+		end)
 
 		FishCaughtRemote.OnClientEvent:Connect(function(fishName)
 			lastCatch = tick()
