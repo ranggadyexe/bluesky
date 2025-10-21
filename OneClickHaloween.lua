@@ -45,6 +45,13 @@ local function goToSpot(cf)
 end
 
 -- =========================================================
+-- 📏 Hitung jarak antar posisi
+local function getDistance(pos1, pos2)
+	return (pos1 - pos2).Magnitude
+end
+
+
+-- =========================================================
 -- 🎃 Lokasi Halloween
 local spotHalloween = CFrame.lookAt(
 	Vector3.new(2105.46630859375, 81.03092956542969, 3295.840087890625),
@@ -247,11 +254,37 @@ end)
 -- 🎣 Auto Fishing Loop
 local function startAutoFishing()
 	task.spawn(function()
-		goToSpot(spotHalloween + Vector3.new(0, 2, 0))
-		equipRod()
-		task.wait(1)
-		startFishing()
-		local lastCatch = tick()
+        -- 🚀 Teleport awal
+        goToSpot(spotHalloween + Vector3.new(0, 2, 0))
+        local _, hrp = waitForCharacter()
+        if not hrp then return end
+
+        -- 📍 Simpan posisi awal
+        local homePos = hrp.Position
+
+        -- 🧠 Start auto fishing
+        equipRod()
+        task.wait(1)
+        startFishing()
+        local lastCatch = tick()
+
+        -- 🧭 Guard teleport (anti kabur)
+        task.spawn(function()
+            while task.wait(2) do -- cek tiap 2 detik
+                pcall(function()
+                    if not _G.AutoGuard then break end
+                    local char = player.Character
+                    if char and char:FindFirstChild("HumanoidRootPart") then
+                        local hrp = char.HumanoidRootPart
+                        local dist = getDistance(hrp.Position, homePos)
+                        if dist > 5 then
+                            print(string.format("[AutoGuard] ⚠️ Keluar area (%.1f stud), kembali ke spot!", dist))
+                            hrp.CFrame = spotHalloween + Vector3.new(0, 2, 0)
+                        end
+                    end
+                end)
+            end
+        end)
 
 		FishCaughtRemote.OnClientEvent:Connect(function(fishName)
 			lastCatch = tick()
