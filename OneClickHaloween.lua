@@ -1,11 +1,13 @@
 -- =========================================================
--- 🎃 OneClick Halloween Auto Fish
--- Auto Fishing + Auto Complete + Auto Sell + AntiAFK + RemoveGUI + LowGraphics
+-- 🎃 OneClick Halloween Auto Fish (Final Stable)
+-- Auto Fishing + Auto Complete + Auto Sell + AntiAFK + RemoveGUI + LowGraphics + Webhook
 
+-- Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
 local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 
 -- =========================================================
@@ -25,214 +27,369 @@ local UnequipToolRemote     = netRoot:WaitForChild("RE/UnequipToolFromHotbar")
 local SellAll               = netRoot:WaitForChild("RF/SellAllItems")
 
 -- =========================================================
--- 🧭 Simple Teleport Function
+-- 🧭 Character Utilities
 local function waitForCharacter()
-    local plr = game.Players.LocalPlayer
-    local char = plr.Character or plr.CharacterAdded:Wait()
-    local hrp = char:WaitForChild("HumanoidRootPart", 10)
-    return char, hrp
+	local plr = game.Players.LocalPlayer
+	local char = plr.Character or plr.CharacterAdded:Wait()
+	local hrp = char:WaitForChild("HumanoidRootPart", 10)
+	return char, hrp
 end
 
 local function goToSpot(cf)
-    local _, hrp = waitForCharacter()
-    if hrp then
-        hrp.CFrame = cf
-        print(string.format("[System] 📍 Teleported to (%.1f, %.1f, %.1f)", cf.Position.X, cf.Position.Y, cf.Position.Z))
-    end
+	local _, hrp = waitForCharacter()
+	if hrp then
+		task.wait(0.3)
+		hrp.CFrame = cf
+		print(string.format("[System] 📍 Teleported to (%.1f, %.1f, %.1f)", cf.Position.X, cf.Position.Y, cf.Position.Z))
+	end
 end
 
 -- =========================================================
 -- 🎃 Lokasi Halloween
 local spotHalloween = CFrame.lookAt(
-    Vector3.new(2105.46630859375, 81.03092956542969, 3295.840087890625),
-    Vector3.new(2105.46630859375, 81.03092956542969, 3295.840087890625)
-        + Vector3.new(0.9843165278434753, -4.2261455446279683e-10, 0.17641150951385498)
+	Vector3.new(2105.46630859375, 81.03092956542969, 3295.840087890625),
+	Vector3.new(2105.46630859375, 81.03092956542969, 3295.840087890625)
+		+ Vector3.new(0.9843165278434753, -4.2261455446279683e-10, 0.17641150951385498)
 )
 
 -- =========================================================
 -- 💤 Anti AFK
 task.spawn(function()
-    player.Idled:Connect(function()
-        VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-        task.wait(1)
-        VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-    end)
+	player.Idled:Connect(function()
+		VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+		task.wait(1)
+		VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+	end)
 end)
 
 -- =========================================================
 -- 💰 Auto Sell
 task.spawn(function()
-    while task.wait(10) do
-        pcall(function()
-            SellAll:InvokeServer()
-        end)
-    end
+	while task.wait(15) do
+		pcall(function()
+			SellAll:InvokeServer()
+		end)
+	end
 end)
 
 -- =========================================================
 -- ⚡ Auto Complete Fishing
 task.spawn(function()
-    while task.wait(0.1) do
-        pcall(function()
-            FishingCompleteRemote:FireServer()
-        end)
-    end
+	while task.wait(0.1) do
+		pcall(function()
+			FishingCompleteRemote:FireServer()
+		end)
+	end
 end)
 
 -- =========================================================
--- 🎣 Auto Fishing
-local function equipRod()
-    EquipToolRemote:FireServer(1)
-end
-local function unequipRod()
-    UnequipToolRemote:FireServer()
-end
+-- 🎣 Auto Fishing Core
+local function equipRod() EquipToolRemote:FireServer(1) end
+local function unequipRod() UnequipToolRemote:FireServer() end
 local function startFishing()
-    ChargeRodRemote:InvokeServer(tick())
-    RequestMiniGameRemote:InvokeServer(50, 1)
+	ChargeRodRemote:InvokeServer(tick())
+	RequestMiniGameRemote:InvokeServer(50, 1)
 end
 
 local function resetCharacter()
-    local char = player.Character
-    if not char then return end
+	local char = player.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if hum then hum.Health = 0 end
 
-    -- Bunuh karakter untuk trigger respawn
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum.Health = 0 end
+	local newChar = player.CharacterAdded:Wait()
+	local newHrp = newChar:WaitForChild("HumanoidRootPart", 10)
+	if not newHrp then return end
 
-    -- Tunggu karakter baru spawn
-    local newChar = player.CharacterAdded:Wait()
-    local newHrp = newChar:WaitForChild("HumanoidRootPart", 10)
-    if not newHrp then return end
+	task.wait(0.5)
+	newHrp.CFrame = spotHalloween + Vector3.new(0, 2, 0)
+	print("[System] 🎃 Respawned & teleported back to Halloween spot!")
 
-    -- Teleport balik ke lokasi Halloween
-    task.wait(0.5)
-    newHrp.CFrame = spotHalloween + Vector3.new(0, 2, 0) -- tambahkan sedikit ketinggian biar aman
-    print("[System] 🎃 Respawned & teleported back to Halloween spot!")
-
-    -- Equip rod dan mulai mancing lagi
-    task.wait(0.3)
-    pcall(function()
-        equipRod()
-        task.wait(0.2)
-        startFishing()
-    end)
-end
-
-
-local function startAutoFishing()
-    task.spawn(function()
-        goToSpot(spotHalloween + Vector3.new(0, 2, 0))
-        equipRod()
-        task.wait(0.3)
-        startFishing()
-        local lastCatch = tick()
-
-        FishCaughtRemote.OnClientEvent:Connect(function()
-            unequipRod()
-            task.wait(0.1)
-            equipRod()
-            task.wait(0.1)
-            startFishing()
-            lastCatch = tick()
-        end)
-
-        while task.wait(1) do
-            local elapsed = tick() - lastCatch
-            if elapsed > 10 then
-                if elapsed > 15 then
-                    warn("[AutoFishing] ❌ Stuck >15s, resetting...")
-                    resetCharacter(spotHalloween + Vector3.new(0, 2, 0))
-                    lastCatch = tick()
-                else
-                    unequipRod()
-                    task.wait(0.1)
-                    equipRod()
-                    task.wait(0.1)
-                    startFishing()
-                    lastCatch = tick()
-                end
-            end
-        end
-    end)
+	task.wait(0.3)
+	pcall(function()
+		equipRod()
+		task.wait(0.2)
+		startFishing()
+	end)
 end
 
 -- =========================================================
--- 🧹 Remove Popup + Low Graphics
+-- 🧱 Data Setup
+local Client = require(ReplicatedStorage.Packages.Replion).Client
+local Data = Client:WaitReplion("Data")
+local ItemsFolder = ReplicatedStorage:WaitForChild("Items")
+
+local knownUUIDs = {}
+local TIER_NAMES = {
+	[1] = "Common",
+	[2] = "Uncommon",
+	[3] = "Rare",
+	[4] = "Epic",
+	[5] = "Legendary",
+	[6] = "Mythic",
+	[7] = "SECRET"
+}
+
+local function getItemDataById(itemId)
+	for _, module in pairs(ItemsFolder:GetChildren()) do
+		local success, data = pcall(require, module)
+		if success and data and data.Data and data.Data.Id == itemId then
+			return data
+		end
+	end
+	return nil
+end
+
+-- =========================================================
+-- 💬 Webhook Configuration
+local HttpService = game:GetService("HttpService")
+
+local WEBHOOK_ENABLED = _G.WebhookEnabled ~= false  -- default aktif
+local WEBHOOK_URL = _G.Webhook or ""
+local RARITY_FILTER = _G.RarityFilter or {"SECRET", "Mythic"}
+local WEBHOOK_PING = _G.Ping or false
+local playerName = game:GetService("Players").LocalPlayer.Name
+
+-- =========================================================
+-- 🎨 Warna Embed per Rarity
+local EMBED_COLORS = {
+	SECRET = 16711935,    -- ungu
+	Mythic = 16753920,    -- oranye
+	Legendary = 16766720, -- emas
+	Epic = 65280,         -- hijau
+	Rare = 255,           -- biru
+	Uncommon = 11184810,  -- abu
+	Common = 16777215     -- putih
+}
+
+-- =========================================================
+-- 📤 Kirim ke Webhook
+local function sendToWebhook(name, rarity, weight, shiny, variant)
+	if not WEBHOOK_ENABLED or WEBHOOK_URL == "" then return end
+
+	local color = EMBED_COLORS[rarity] or 16777215
+	local shinyText = shiny and "✨ Yes" or "No"
+	local variantText = variant ~= "None" and variant or "-"
+	local content = ""
+
+	if WEBHOOK_PING and type(WEBHOOK_PING) == "string" and WEBHOOK_PING ~= "" then
+		content = WEBHOOK_PING -- bisa @everyone atau <@id>
+	end
+
+	local data = {
+		username = "🎣 Bluesky AutoFish",
+		content = content,
+		embeds = { {
+			title = string.format("🐟 %s", name),
+			description = string.format(
+				"**Player:** %s\n**Rarity:** %s\n**Weight:** `%.2f`\n**Shiny:** %s\n**Variant:** %s",
+				playerName, rarity, weight, shinyText, variantText
+			),
+			color = color,
+			footer = { text = "AutoFishing Notifier by Bluesky" },
+			timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+		} }
+	}
+
+	pcall(function()
+		local req = (syn and syn.request) or (http and http.request) or http_request
+		if not req then
+			warn("[Webhook] ❌ Executor tidak mendukung HTTP request.")
+			return
+		end
+
+		req({
+			Url = WEBHOOK_URL,
+			Method = "POST",
+			Headers = {["Content-Type"] = "application/json"},
+			Body = HttpService:JSONEncode(data)
+		})
+
+		print(string.format("[Webhook] ✅ %s (%s) | %.2f | shiny=%s | variant=%s | player=%s",
+			name, rarity, weight, tostring(shiny), variant, playerName))
+	end)
+end
+
+-- =========================================================
+-- 🔍 Deteksi Ikan Baru
+task.spawn(function()
+	while task.wait(0.5) do
+		local items = Data.Data["Inventory"]["Items"]
+		for uuid, item in pairs(items) do
+			if not knownUUIDs[uuid] then
+				knownUUIDs[uuid] = true
+				local id = item.Id or 0
+				local metadata = item.Metadata or {}
+				local weight = metadata.Weight or 0
+				local shiny = metadata.Shiny or false
+				local variant = metadata.VariantId or "None"
+
+				local itemInfo = getItemDataById(id)
+				local name = (itemInfo and itemInfo.Data and itemInfo.Data.Name) or "Unknown Fish"
+				local tier = (itemInfo and itemInfo.Data and itemInfo.Data.Tier) or 1
+				local rarity = TIER_NAMES[tier] or "Unknown"
+
+				for _, filter in ipairs(RARITY_FILTER) do
+					if string.lower(filter) == string.lower(rarity) then
+						sendToWebhook(name, rarity, weight, shiny, variant)
+						break
+					end
+				end
+
+				print(string.format("🎣 %s | Tier %d (%s) | Weight: %.2f | Shiny: %s | Variant: %s",
+					name, tier, rarity, weight, tostring(shiny), variant))
+			end
+		end
+	end
+end)
+
+-- =========================================================
+-- 🎣 Auto Fishing Loop
+local function startAutoFishing()
+	task.spawn(function()
+		goToSpot(spotHalloween + Vector3.new(0, 2, 0))
+		equipRod()
+		task.wait(1)
+		startFishing()
+		local lastCatch = tick()
+
+		FishCaughtRemote.OnClientEvent:Connect(function(fishName)
+			lastCatch = tick()
+			print("[AutoFishing] 🎣 Ikan tertangkap:", fishName)
+
+			-- 🔍 Ambil ikan terbaru dari inventory
+			local newest
+            for _, item in pairs(Data.Data["Inventory"]["Items"]) do
+                newest = item
+            end
+
+			if not newest then return end
+			local id = newest.Id or 0
+			local metadata = newest.Metadata or {}
+			local weight = metadata.Weight or 0
+			local shiny = metadata.Shiny or false
+			local variant = metadata.VariantId or "None"
+
+			local itemInfo = getItemDataById(id)
+			local name = (itemInfo and itemInfo.Data and itemInfo.Data.Name) or fishName or "Unknown Fish"
+			local tier = (itemInfo and itemInfo.Data and itemInfo.Data.Tier) or 1
+			local rarity = TIER_NAMES[tier] or "Unknown"
+
+			print(string.format("🎣 %s | Tier %d (%s) | Weight: %.2f | Shiny: %s | Variant: %s",
+				name, tier, rarity, weight, tostring(shiny), variant))
+
+			-- 🎯 Kirim webhook realtime hanya jika sesuai filter
+			for _, filter in ipairs(RARITY_FILTER) do
+				if string.lower(filter) == string.lower(rarity) then
+					sendToWebhook(name, rarity, weight, shiny, variant)
+					break
+				end
+			end
+
+			-- Lanjutkan auto-fishing
+			task.wait(0.1)
+			unequipRod()
+			task.wait(0.1)
+			equipRod()
+			task.wait(0.2)
+			startFishing()
+		end)
+
+		-- ⏱ Failsafe jika event tidak terpicu
+		while task.wait(1) do
+			local elapsed = tick() - lastCatch
+			if elapsed > 15 then
+				warn("[AutoFishing] ❌ Stuck >15s, reset karakter.")
+				resetCharacter(spotHalloween + Vector3.new(0, 2, 0))
+				lastCatch = tick()
+			elseif elapsed > 10 then
+				print("[AutoFishing] ⚠️ No catch in 10s, restart rod...")
+				unequipRod()
+				task.wait(0.1)
+				equipRod()
+				task.wait(0.2)
+				startFishing()
+				lastCatch = tick()
+			end
+		end
+	end)
+end
+
+-- =========================================================
+-- 🧹 GUI & Graphics Optimizer
 local function removeGUI()
-    local playerGui = player:WaitForChild("PlayerGui")
-    local s = playerGui:FindFirstChild("Small Notification")
-    if s then s:Destroy() end
-    local t = playerGui:FindFirstChild("Text Notifications")
-    if t then t:Destroy() end
+	local playerGui = player:WaitForChild("PlayerGui")
+	local s = playerGui:FindFirstChild("Small Notification")
+	if s then s:Destroy() end
+	local t = playerGui:FindFirstChild("Text Notifications")
+	if t then t:Destroy() end
 end
 
 local function disableVFX(obj)
-    if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam")
-    or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
-        obj.Enabled = false
-    end
+	if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam")
+	or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+		obj.Enabled = false
+	end
 end
 
 local function simplifyPart(obj)
-    if obj:IsA("BasePart") then
-        obj.Material = Enum.Material.Plastic
-    end
+	if obj:IsA("BasePart") then
+		obj.Material = Enum.Material.Plastic
+	end
 end
 
 local function applyLowGraphics(container)
-    for _, obj in ipairs(container:GetDescendants()) do
-        disableVFX(obj)
-        simplifyPart(obj)
-    end
+	for _, obj in ipairs(container:GetDescendants()) do
+		disableVFX(obj)
+		simplifyPart(obj)
+	end
 end
 
 local function enableLowGraphics()
-    Lighting.GlobalShadows = false
-    Lighting.Brightness = 1
-    Lighting.FogEnd = 1e6
-    Lighting.EnvironmentSpecularScale = 0
-    Lighting.EnvironmentDiffuseScale = 0
-    Lighting.Ambient = Color3.new(1, 1, 1)
-    Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+	Lighting.GlobalShadows = false
+	Lighting.Brightness = 1
+	Lighting.FogEnd = 1e6
+	Lighting.EnvironmentSpecularScale = 0
+	Lighting.EnvironmentDiffuseScale = 0
+	Lighting.Ambient = Color3.new(1, 1, 1)
+	Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
 
-    if ReplicatedStorage:FindFirstChild("VFX") then
-        ReplicatedStorage.VFX:ClearAllChildren()
-    end
+	if ReplicatedStorage:FindFirstChild("VFX") then
+		ReplicatedStorage.VFX:ClearAllChildren()
+	end
 
-    local containers = {workspace, Lighting, ReplicatedStorage, player:WaitForChild("PlayerGui")}
-    for _, c in ipairs(containers) do
-        applyLowGraphics(c)
-        c.DescendantAdded:Connect(function(obj)
-            disableVFX(obj)
-            simplifyPart(obj)
-        end)
-    end
+	local containers = {workspace, Lighting, ReplicatedStorage, player:WaitForChild("PlayerGui")}
+	for _, c in ipairs(containers) do
+		applyLowGraphics(c)
+		c.DescendantAdded:Connect(function(obj)
+			disableVFX(obj)
+			simplifyPart(obj)
+		end)
+	end
 end
 
 -- =========================================================
--- 👻 Hide Random GUI Popups (!!! Daily Login & !!! Update Log)
+-- 👻 Hide GUI Popups (!!! Daily Login & !!! Update Log)
 task.spawn(function()
-    while task.wait(600) do -- tiap 10 menit
-        pcall(function()
-            local gui = player:WaitForChild("PlayerGui")
-            local daily = gui:FindFirstChild("!!! Daily Login")
-            local update = gui:FindFirstChild("!!! Update Log")
-            if daily then daily.Enabled = false end
-            if update then update.Enabled = false end
-        end)
-    end
+	while task.wait(600) do
+		pcall(function()
+			local gui = player:WaitForChild("PlayerGui")
+			local daily = gui:FindFirstChild("!!! Daily Login")
+			local update = gui:FindFirstChild("!!! Update Log")
+			if daily then daily.Enabled = false end
+			if update then update.Enabled = false end
+		end)
+	end
 end)
 
 -- =========================================================
 -- 🚀 Start Everything
 task.spawn(function()
-    removeGUI()
-    enableLowGraphics()
-    task.wait(1)
-    startAutoFishing()
+	removeGUI()
+	enableLowGraphics()
+	task.wait(1)
+	startAutoFishing()
 end)
-
 
 -- =========================================================
 -- 🧠 Handle Respawn: rebuild UI after CharacterAdded
