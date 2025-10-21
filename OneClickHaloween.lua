@@ -92,19 +92,25 @@ local function startFishing()
     RequestMiniGameRemote:InvokeServer(50, 1)
 end
 
-local function resetCharacter(targetCFrame)
+local function resetCharacter()
     local char = player.Character
     if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local lastPos = targetCFrame or (hrp and hrp.CFrame) or spotHalloween
+
+    -- Bunuh karakter untuk trigger respawn
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum then hum.Health = 0 end
 
+    -- Tunggu karakter baru spawn
     local newChar = player.CharacterAdded:Wait()
     local newHrp = newChar:WaitForChild("HumanoidRootPart", 10)
     if not newHrp then return end
+
+    -- Teleport balik ke lokasi Halloween
     task.wait(0.5)
-    newHrp.CFrame = lastPos
+    newHrp.CFrame = spotHalloween + Vector3.new(0, 2, 0) -- tambahkan sedikit ketinggian biar aman
+    print("[System] 🎃 Respawned & teleported back to Halloween spot!")
+
+    -- Equip rod dan mulai mancing lagi
     task.wait(0.3)
     pcall(function()
         equipRod()
@@ -112,6 +118,7 @@ local function resetCharacter(targetCFrame)
         startFishing()
     end)
 end
+
 
 local function startAutoFishing()
     task.spawn(function()
