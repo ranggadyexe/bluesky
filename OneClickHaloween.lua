@@ -298,7 +298,7 @@ local function startAutoFishing()
 		-- ⏱ Failsafe jika event tidak terpicu
 		while task.wait(1) do
 			local elapsed = tick() - lastCatch
-			if elapsed > 15 then
+			if elapsed > 30 then
 				warn("[AutoFishing] ❌ Stuck >15s, reset karakter.")
 				resetCharacter(spotHalloween + Vector3.new(0, 2, 0))
 				lastCatch = tick()
@@ -512,7 +512,7 @@ local function buildOverlay()
         while task.wait(1) do
             local elapsed = tick() - lastCatch
 
-            if elapsed > 15 and not waitingReset then
+            if elapsed > 30 and not waitingReset then
                 Indicator.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
                 warn("[AutoFishing] ❌ Tidak ada ikan >15s → reset karakter.")
                 
