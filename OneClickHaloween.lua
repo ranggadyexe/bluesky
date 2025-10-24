@@ -140,19 +140,20 @@ local TIER_NAMES = {
 local function getItemDataById(itemId)
 	for _, module in pairs(ItemsFolder:GetChildren()) do
 		local success, data = pcall(require, module)
-		if success and data and data.Data and data.Data.Id == itemId then
+		if success and type(data) == "table" and data.Data and tonumber(data.Data.Id) == tonumber(itemId) then
 			return data
 		end
 	end
 	return nil
 end
 
+
 -- =========================================================
 -- 💬 Webhook Configuration
 
 local WEBHOOK_ENABLED = _G.WebhookEnabled ~= false  -- default aktif
 local WEBHOOK_URL = _G.Webhook or ""
-local RARITY_FILTER = _G.RarityFilter or {"SECRET", "Mythic"}
+local RARITY_FILTER = _G.RarityFilter or ""
 local WEBHOOK_PING = _G.Ping or false
 local playerName = game:GetService("Players").LocalPlayer.Name
 
@@ -217,8 +218,15 @@ local function sendToWebhook(name, rarity, weight, shiny, variant)
 end
 
 -- =========================================================
--- 🔍 Deteksi Ikan Baru
+-- 🔍 Deteksi Ikan Baru (FIXED)
 task.spawn(function()
+    -- ✅ Abaikan semua ikan yang sudah ada sebelum mulai
+    local initialItems = Data.Data["Inventory"]["Items"]
+    for uuid in pairs(initialItems) do
+        knownUUIDs[uuid] = true
+    end
+    print("[Webhook] ✅ Initialized inventory, now tracking new catches only.")
+
 	while task.wait(0.5) do
 		local items = Data.Data["Inventory"]["Items"]
 		for uuid, item in pairs(items) do
@@ -234,20 +242,19 @@ task.spawn(function()
 				local name = (itemInfo and itemInfo.Data and itemInfo.Data.Name) or "Unknown Fish"
 				local tier = (itemInfo and itemInfo.Data and itemInfo.Data.Tier) or 1
 				local rarity = TIER_NAMES[tier] or "Unknown"
+                rarity = string.lower(rarity)
 
 				for _, filter in ipairs(RARITY_FILTER) do
-					if string.lower(filter) == string.lower(rarity) then
-						sendToWebhook(name, rarity, weight, shiny, variant)
-						break
-					end
-				end
-
-				print(string.format("🎣 %s | Tier %d (%s) | Weight: %.2f | Shiny: %s | Variant: %s",
-					name, tier, rarity, weight, tostring(shiny), variant))
+                    if string.lower(filter) == rarity then
+                        sendToWebhook(name, rarity, weight, shiny, variant)
+                        break
+                    end
+                end
 			end
 		end
 	end
 end)
+
 
 -- =========================================================
 -- 🎣 Auto Fishing Loop
