@@ -1,11 +1,13 @@
 -- =========================================================
 -- 🐟 OneClick Fish It v3
--- Auto Megalodon + Auto Fishing + Auto Complete + Auto Sell + AntiAFK + RemoveGUI + LowGraphics
+-- Auto Megalodon + Auto Fishing (Controller) + Auto Complete + Auto Sell + AntiAFK + RemoveGUI + LowGraphics
+-- =========================================================
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
 local VirtualUser = game:GetService("VirtualUser")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local player = Players.LocalPlayer
 
 -- =========================================================
@@ -16,18 +18,18 @@ local netRoot = ReplicatedStorage
     :WaitForChild("sleitnick_net@0.2.0")
     :WaitForChild("net")
 
-local ChargeRodRemote       = netRoot:WaitForChild("RF/ChargeFishingRod")
-local RequestMiniGameRemote = netRoot:WaitForChild("RF/RequestFishingMinigameStarted")
-local FishingCompleteRemote = netRoot:WaitForChild("RE/FishingCompleted")
-local FishCaughtRemote      = netRoot:WaitForChild("RE/FishCaught")
-local EquipToolRemote       = netRoot:WaitForChild("RE/EquipToolFromHotbar")
-local UnequipToolRemote     = netRoot:WaitForChild("RE/UnequipToolFromHotbar")
-local SellAll               = netRoot:WaitForChild("RF/SellAllItems")
+local EquipToolRemote = netRoot:WaitForChild("RE/EquipToolFromHotbar")
+local SellAll = netRoot:WaitForChild("RF/SellAllItems")
+
+-- =========================================================
+-- Controller references
+local RF_AutoFishing = require(ReplicatedStorage.Packages.Net):RemoteFunction("UpdateAutoFishingState")
+local FishingController = require(ReplicatedStorage.Controllers:WaitForChild("FishingController"))
 
 -- =========================================================
 -- 🧭 Simple Teleport Function (no reset / respawn)
 local function waitForCharacter()
-    local plr = game.Players.LocalPlayer
+    local plr = player
     local char = plr.Character or plr.CharacterAdded:Wait()
     local hrp = char:WaitForChild("HumanoidRootPart", 10)
     if not hrp then
@@ -40,7 +42,6 @@ end
 local function goToSpot(cf)
     local _, hrp = waitForCharacter()
     if not hrp then return end
-
     hrp.CFrame = cf
     print(string.format("[System] 📍 Teleported to spot (%.1f, %.1f, %.1f)", cf.Position.X, cf.Position.Y, cf.Position.Z))
 end
@@ -66,7 +67,7 @@ end)
 -- =========================================================
 -- 💰 Auto Sell (loop tiap 10 detik)
 task.spawn(function()
-    while task.wait(10) do
+    while task.wait(1) do
         pcall(function()
             SellAll:InvokeServer()
         end)
@@ -74,65 +75,52 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- ⚡ Auto Complete Fishing (always on)
-task.spawn(function()
-    while task.wait(0.1) do
-        pcall(function()
-            FishingCompleteRemote:FireServer()
-        end)
-    end
-end)
+-- 🎣 AUTO FISHING (pakai AutoFishingController bawaan game)
+-- =========================================================
+local function click(x, y)
+	VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+	VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+end
+
+local function startAutoFishing()
+	task.spawn(function()
+		goToSpot(spotSacredTemple + Vector3.new(0, 5, 0))
+		local _, hrp = waitForCharacter()
+		if not hrp then return end
+
+		task.wait(1)
+		print("🎣 Equipping rod...")
+		EquipToolRemote:FireServer(1)
+		task.wait(0.5)
+
+		print("⚙️ Enabling AutoFishingController...")
+		RF_AutoFishing:InvokeServer(true)
+
+		print("✅ AutoFishing aktif! Menunggu minigame...")
+
+		task.spawn(function()
+			while task.wait(0.05) do
+				pcall(function()
+					local fishingGui = player.PlayerGui:FindFirstChild("Fishing")
+					if fishingGui and fishingGui.Main.Display.Minigame.Visible then
+						local mover = fishingGui.Main.Display.Minigame:FindFirstChild("Mover")
+						if mover then
+							local pos = mover.AbsolutePosition + mover.AbsoluteSize / 2
+							click(pos.X, pos.Y)
+						end
+					end
+				end)
+			end
+		end)
+	end)
+end
 
 -- =========================================================
--- 🎣 Auto Fishing (with reset if stuck)
-local function equipRod()
-    EquipToolRemote:FireServer(1)
-end
-local function unequipRod()
-    UnequipToolRemote:FireServer()
-end
-local function startFishing()
-    ChargeRodRemote:InvokeServer(tick())
-    RequestMiniGameRemote:InvokeServer(50, 1)
-end
-
-local function resetCharacter(targetCFrame)
-    local char = player.Character
-    if not char then return end
-
-    -- tentukan posisi terakhir (target dari Megalodon / SacredTemple)
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local lastPos = targetCFrame or (hrp and hrp.CFrame) or spotSacredTemple
-
-    -- bunuh karakter (trigger respawn)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum.Health = 0 end
-
-    -- tunggu respawn dan teleport balik
-    local newChar = player.CharacterAdded:Wait()
-    local newHrp = newChar:WaitForChild("HumanoidRootPart", 10)
-    if not newHrp then return end
-
-    task.wait(0.5)
-    newHrp.CFrame = lastPos  -- ⬅️ balik ke posisi terakhir
-
-    -- lanjut equip dan start fishing lagi
-    task.wait(0.3)
-    pcall(function()
-        equipRod()
-        task.wait(0.2)
-        startFishing()
-    end)
-end
-
-
--- =========================================================
--- 🦈 Auto Megalodon (integrated with goToSpot)
+-- 🦈 Auto Megalodon
 local function getMegalodonProp()
     local menuRings = workspace:FindFirstChild("!!! MENU RINGS")
     if not menuRings then return nil end
 
-    -- 🔹 Cek langsung di Props
     local props = menuRings:FindFirstChild("Props")
     if props then
         local target = props:FindFirstChild("Megalodon Hunt")
@@ -144,7 +132,6 @@ local function getMegalodonProp()
         end
     end
 
-    -- 🔹 Fallback ke children index ke-19
     local child19 = menuRings:GetChildren()[19]
     if child19 then
         local target = child19:FindFirstChild("Megalodon Hunt")
@@ -156,11 +143,9 @@ local function getMegalodonProp()
         end
     end
 
-    return nil -- ❌ Tidak ada Megalodon Hunt
+    return nil
 end
 
--- =========================================================
--- 🪵 Platform Props
 local propsPlatform
 local activeMode = "BestSpot"
 local loopTask
@@ -186,12 +171,10 @@ local function removePropsPlatform()
     propsPlatform = nil
 end
 
--- =========================================================
--- 🌀 Start / Stop Loop
 local function startAutoMegalodon()
-    if loopTask then return end -- hindari dobel loop
+    if loopTask then return end
 
-    goToSpot(spotSacredTemple + Vector3.new(0, 2, 0))
+    goToSpot(spotSacredTemple + Vector3.new(0, 5, 0))
     activeMode = "BestSpot"
 
     loopTask = task.spawn(function()
@@ -200,7 +183,6 @@ local function startAutoMegalodon()
                 local targetCFrame = getMegalodonProp()
 
                 if targetCFrame then
-                    -- Megalodon terdeteksi
                     if activeMode ~= "Megalodon" then
                         createPropsPlatform(targetCFrame)
                         goToSpot(propsPlatform.CFrame + Vector3.new(0, 100, 0))
@@ -208,11 +190,10 @@ local function startAutoMegalodon()
                         print("[Megalodon] 🦈 Found — teleporting high above spot!")
                     end
                 else
-                    -- Megalodon hilang
                     if activeMode ~= "BestSpot" then
                         print("[Megalodon] 🌀 Megalodon gone → returning to BestSpot")
                         removePropsPlatform()
-                        goToSpot(spotSacredTemple + Vector3.new(0, 2, 0))
+                        goToSpot(spotSacredTemple + Vector3.new(0, 5, 0))
                         activeMode = "BestSpot"
                     end
                 end
@@ -228,46 +209,6 @@ local function stopAutoMegalodon()
     end
     removePropsPlatform()
     activeMode = "BestSpot"
-end
-
-
--- =========================================================
--- 🎣 Start AutoFishing Loop
-local function startAutoFishing()
-    task.spawn(function()
-        equipRod()
-        task.wait(0.3)
-        startFishing()
-        local lastCatch = tick()
-
-        FishCaughtRemote.OnClientEvent:Connect(function()
-            unequipRod()
-            task.wait(0.1)
-            equipRod()
-            task.wait(0.1)
-            startFishing()
-            lastCatch = tick()
-        end)
-
-        while task.wait(1) do
-            local elapsed = tick() - lastCatch
-            if elapsed > 10 then
-                if elapsed > 15 then
-                    warn("[AutoFishing] ❌ Stuck >15s, resetting...")
-                    local cf = (propsPlatform and propsPlatform.CFrame + Vector3.new(0, 100, 0)) or spotSacredTemple
-                    resetCharacter(cf)
-                    lastCatch = tick()
-                else
-                    unequipRod()
-                    task.wait(0.1)
-                    equipRod()
-                    task.wait(0.1)
-                    startFishing()
-                    lastCatch = tick()
-                end
-            end
-        end
-    end)
 end
 
 -- =========================================================
@@ -326,7 +267,7 @@ end
 -- =========================================================
 -- 👻 Hide Random GUI Popups (!!! Daily Login & !!! Update Log)
 task.spawn(function()
-    while task.wait(600) do -- tiap 10 menit
+    while task.wait(600) do
         pcall(function()
             local gui = player:WaitForChild("PlayerGui")
             local daily = gui:FindFirstChild("!!! Daily Login")

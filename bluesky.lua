@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local VirtualUser = game:GetService("VirtualUser")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Client = require(ReplicatedStorage.Packages.Replion).Client
@@ -67,24 +68,56 @@ local FishCaughtRemote      = netRoot:WaitForChild("RE/FishCaught")
 local EquipToolRemote       = netRoot:WaitForChild("RE/EquipToolFromHotbar")
 local UnequipToolRemote     = netRoot:WaitForChild("RE/UnequipToolFromHotbar")
 local redeemRemote          = netRoot:WaitForChild("RF/RedeemCode")
-
+local RF_AutoFishing        = require(ReplicatedStorage.Packages.Net):RemoteFunction("UpdateAutoFishingState")
+local FishingController     = require(ReplicatedStorage.Controllers:WaitForChild("FishingController"))
 -- =========================================================
 -- 🎣 UI Section
 local Section = MainTab:CreateSection("🎣 Auto Fishing")
 
 -- =========================================================
 -- 🧠 Helper Functions
-local function equipRod()
-    EquipToolRemote:FireServer(1)
+local function click(x, y)
+	VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+	VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
 end
 
-local function unequipRod()
-    UnequipToolRemote:FireServer()
+-- =========================================================
+-- 🧠 Core logic: enable/disable auto fishing
+local function enableAutoFishing()
+	if autoFishingActive then return end
+	autoFishingActive = true
+
+	EquipToolRemote:FireServer(1)
+	task.wait(0.5)
+
+	RF_AutoFishing:InvokeServer(true)
+	task.wait(0.5)
+	autoFishingLoop = task.spawn(function()
+		while autoFishingActive do
+			task.wait(0.05)
+			pcall(function()
+				local gui = LocalPlayer.PlayerGui:FindFirstChild("Fishing")
+				if gui and gui.Main.Display.Minigame.Visible then
+					local mover = gui.Main.Display.Minigame:FindFirstChild("Mover")
+					if mover then
+						local pos = mover.AbsolutePosition + mover.AbsoluteSize / 2
+						click(pos.X, pos.Y)
+					end
+				end
+			end)
+		end
+	end)
 end
 
-local function startFishing()
-    ChargeRodRemote:InvokeServer(tick())
-    RequestMiniGameRemote:InvokeServer(50, 1)
+local function disableAutoFishing()
+	if not autoFishingActive then return end
+	autoFishingActive = false
+
+	pcall(function() RF_AutoFishing:InvokeServer(false) end)
+	if autoFishingLoop then
+		task.cancel(autoFishingLoop)
+		autoFishingLoop = nil
+	end
 end
 
 local function waitForCharacter()
@@ -157,107 +190,24 @@ local spotRobotKraken = CFrame.lookAt(
 )
 
 -- =========================================================
--- 🔁 State
-local autoFishConn
-local safetyThread
-local lastCatch = tick()
-local spamThread
+-- 🔁 Global state
+local autoFishingLoop = nil
+local autoFishingActive = false
 
 -- =========================================================
--- 🎣 Toggle 1: Auto Fishing
+-- 🎣 Auto Fishing
 MainTab:CreateToggle({
-    Name = "🎣 Auto Fishing",
-    CurrentValue = false,
-    Flag = "AutoFishing",
-    Callback = function(v)
-        _G.AutoFish = v
-
-        if not v then
-            if autoFishConn then autoFishConn:Disconnect() autoFishConn = nil end
-            if safetyThread then task.cancel(safetyThread) safetyThread = nil end
-            print("[AutoFishing] 🔴 Stopped.")
-            return
-        end
-
-        print("[AutoFishing] ✅ Started.")
-        equipRod()
-        task.wait(0.3)
-        startFishing()
-        lastCatch = tick()
-
-        -- 🐟 Event: Saat ikan tertangkap
-        autoFishConn = FishCaughtRemote.OnClientEvent:Connect(function()
-            if not _G.AutoFish then return end
-            lastCatch = tick()
-
-            task.spawn(function()
-                unequipRod()
-                task.wait(0.1)
-                equipRod()
-                task.wait(0.1)
-                startFishing()
-                lastCatch = tick()
-            end)
-        end)
-
-        -- 🧠 Safety thread (restart & auto reset jika macet)
-        safetyThread = task.spawn(function()
-            while _G.AutoFish do
-                local elapsed = tick() - lastCatch
-                if elapsed > 10 then
-                    warn(string.format("[AutoFishing] ⚠️ No catch for %.1fs", elapsed))
-
-                    if elapsed > 15 then
-                        warn("[AutoFishing] ❌ No fish caught for 15s → Resetting character.")
-                        Rayfield.Flags["ResetCharacter"].Callback()  -- panggil tombol reset langsung
-                        task.wait(3) -- beri waktu respawn
-                        equipRod()
-                        task.wait(0.3)
-                        startFishing()
-                        lastCatch = tick()
-                    else
-                        -- coba restart pancing dulu
-                        unequipRod()
-                        task.wait(0.1)
-                        equipRod()
-                        task.wait(0.1)
-                        startFishing()
-                        lastCatch = tick()
-                    end
-                end
-                task.wait(1)
-            end
-        end)
-    end
+	Name = "🎣 Auto Fishing",
+	CurrentValue = false,
+	Flag = "AutoFishing",
+	Callback = function(state)
+		if state then
+			enableAutoFishing()
+		else
+			disableAutoFishing()
+		end
+	end,
 })
-
--- =========================================================
--- Auto Complete Fishing
-MainTab:CreateToggle({
-    Name = "⚡ Auto Complete Fishing",
-    CurrentValue = false,
-    Flag = "AutoCompleteFishing",
-    Callback = function(v)
-        _G.AutoCompleteFishing = v
-
-        if not v then
-            if spamThread then task.cancel(spamThread) spamThread = nil end
-            print("[AutoComplete] 🔴 Disabled.")
-            return
-        end
-
-        print("[AutoComplete] ⚡ Spamming FishingCompleteRemote...")
-        spamThread = task.spawn(function()
-            while _G.AutoCompleteFishing do
-                pcall(function()
-                    FishingCompleteRemote:FireServer()
-                end)
-                task.wait(0.1)
-            end
-        end)
-    end
-})
-
 
 -- =========================================================
 -- Reset Character
