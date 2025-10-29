@@ -92,6 +92,18 @@ local function enableAutoFishing()
 
 	RF_AutoFishing:InvokeServer(true)
 	task.wait(0.5)
+
+	print("[AutoFishing] ✅ Enabled.")
+	local lastCatch = tick()
+
+	-- 🪝 Listener: update waktu terakhir saat ikan tertangkap
+	local fishConn
+	local fishEvent = netRoot:WaitForChild("RE/FishCaught")
+	fishConn = fishEvent.OnClientEvent:Connect(function()
+		lastCatch = tick()
+	end)
+
+	-- 🎯 Main click loop
 	autoFishingLoop = task.spawn(function()
 		while autoFishingActive do
 			task.wait(0.05)
@@ -107,6 +119,21 @@ local function enableAutoFishing()
 			end)
 		end
 	end)
+
+	-- ⏱️ Failsafe: kalau tidak ada FishCaught selama 10 detik → re-equip rod
+	task.spawn(function()
+		while autoFishingActive do
+			task.wait(1)
+			local elapsed = tick() - lastCatch
+			if elapsed >= 10 then
+				print(string.format("[AutoFishing] ⚠️ No fish caught for %.1fs → re-equipping rod.", elapsed))
+				pcall(function()
+					EquipToolRemote:FireServer(1)
+				end)
+				lastCatch = tick()
+			end
+		end
+	end)
 end
 
 local function disableAutoFishing()
@@ -118,6 +145,7 @@ local function disableAutoFishing()
 		task.cancel(autoFishingLoop)
 		autoFishingLoop = nil
 	end
+	print("[AutoFishing] 🛑 Disabled.")
 end
 
 local function waitForCharacter()
