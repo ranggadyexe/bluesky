@@ -273,10 +273,10 @@ MainTab:CreateButton({
 
 -- =========================================================
 -- 🎁 Auto Claim Event Rewards (Loop Every 60 Minutes)
-local Section = MainTab:CreateSection("Jungle Event")
+local Section = MainTab:CreateSection("Battlepass Event")
 
 MainTab:CreateToggle({
-    Name = "Auto Claim Event Rewards (Every 60 Minutes)",
+    Name = "Auto Claim Battlepass (Every 60 Minutes)",
     CurrentValue = false,
     Flag = "AutoClaimEventRewards",
     Callback = function(state)
@@ -287,8 +287,8 @@ MainTab:CreateToggle({
             local remote = netRoot:WaitForChild("RE/ClaimEventReward")
 
             while _G.AutoClaimEventRewards do
-                -- Klaim semua reward 1–13
-                for i = 1, 13 do
+                -- Klaim semua reward 15
+                for i = 1, 15 do
                     if not _G.AutoClaimEventRewards then break end
                     task.wait(0.25)
                     pcall(function()
