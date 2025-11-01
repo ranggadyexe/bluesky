@@ -148,6 +148,31 @@ local function disableAutoFishing()
 	print("[AutoFishing] 🛑 Disabled.")
 end
 
+local function DisableAllFishingAnimations()
+    local animationsFolder = game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Animations")
+
+    for _, anim in ipairs(animationsFolder:GetChildren()) do
+        if anim:IsA("Animation") then
+            anim.AnimationId = "" -- hapus ID supaya tidak bisa diputar
+        end
+    end
+
+    -- Pastikan AnimationController tidak bisa play ulang
+    local success, controller = pcall(function()
+        return require(game:GetService("ReplicatedStorage").Controllers.AnimationController)
+    end)
+    if success and controller then
+        pcall(function()
+            controller:DestroyActiveAnimationTracks() -- stop semua yg sedang jalan
+        end)
+        -- Opsional: override PlayAnimation agar tidak berfungsi
+        controller.PlayAnimation = function() end
+        controller.StopAnimation = function() end
+    end
+
+    warn("[🛑] Semua animasi mancing berhasil dinonaktifkan!")
+end
+
 local function waitForCharacter()
     local plr = game.Players.LocalPlayer
     local char = plr.Character or plr.CharacterAdded:Wait()
@@ -216,6 +241,12 @@ local spotRobotKraken = CFrame.lookAt(
     Vector3.new(-3764.026, -135.074, -994.416),
     Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, -8.57e-08, 0.720)
 )
+
+local spotCrystalFalls = CFrame.lookAt(
+    Vector3.new(-1978.70556640625, -440.0005798339844, 7346.2998046875),
+    Vector3.new(-1978.70556640625, -440.0005798339844, 7346.2998046875) + Vector3.new(-0.4962877631187439, 8.985958999119248e-08, 0.8681581020355225)
+)
+
 
 -- =========================================================
 -- 🔁 Global state
@@ -445,6 +476,37 @@ MainTab:CreateToggle({
         end
     end,
 })
+
+-- =========================================================
+-- Event Secret Admin
+
+MainTab:CreateToggle({
+    Name = "Farm Crystall Falls (EVENT ADMIN SECRET)",
+    CurrentValue = false,
+    Flag = "AutoRobotKraken",
+    Callback = function(state)
+        _G.AutoRobotKraken = state
+
+        if not state then
+            if Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(false)
+            end
+            return
+        end
+
+        goToSpot(spotCrystalFalls)
+
+        task.spawn(function()
+            while _G.AutoRobotKraken do
+                if not Rayfield.Flags["AutoFishing"].CurrentValue then
+                    Rayfield.Flags["AutoFishing"]:Set(true)
+                end
+                task.wait(5)
+            end
+        end)
+    end,
+})
+
 -- =========================================================
 -- Robot Kraken
 
@@ -690,23 +752,46 @@ MainTab:CreateToggle({
 })
 
 --// Toggle Remove GUI
+local removeGUIEnabled = false
+local removeLoop
+
 MainTab:CreateToggle({
    Name = "Remove Popup",
    CurrentValue = false,
    Flag = "RemoveGUI",
    Callback = function(Value)
-       if Value then
-           local player = game:GetService("Players").LocalPlayer
-           local playerGui = player:WaitForChild("PlayerGui")
+       removeGUIEnabled = Value
+       local player = game:GetService("Players").LocalPlayer
+       local playerGui = player:WaitForChild("PlayerGui")
 
+       if Value then
            local smallNotif = playerGui:FindFirstChild("Small Notification")
            if smallNotif then smallNotif:Destroy() end
 
            local textNotif = playerGui:FindFirstChild("Text Notifications")
            if textNotif then textNotif:Destroy() end
+
+           -- start loop only once
+           if not removeLoop then
+               removeLoop = task.spawn(function()
+                   while removeGUIEnabled do
+                       pcall(function()
+                           local gui = player:WaitForChild("PlayerGui")
+                           local daily = gui:FindFirstChild("!!! Daily Login")
+                           local update = gui:FindFirstChild("!!! Update Log")
+                           if daily then daily.Enabled = false end
+                           if update then update.Enabled = false end
+                       end)
+                       task.wait(600) -- check tiap 10 menit
+                   end
+               end)
+           end
+       else
+           removeGUIEnabled = false
        end
    end,
 })
+
 
 --// 🔻 Disable VFX on new objects
 local function disableVFX(obj)
@@ -776,6 +861,7 @@ MainTab:CreateToggle({
                     simplifyPart(obj)
                 end)
             end
+			DisableAllFishingAnimations()
         else
         end
     end,
@@ -1222,11 +1308,14 @@ AutoTab:CreateToggle({
 -- =========================================================
 local Section = AutoTab:CreateSection("Auto Favorited Rarity")
 local ItemUtility = require(ReplicatedStorage.Shared.ItemUtility)
+local ItemsFolder = ReplicatedStorage:WaitForChild("Items")
 
 -- Remote untuk favorite
-local RemoteFavorite = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net["RE/FavoriteItem"]
+local RemoteFavorite = ReplicatedStorage
+    .Packages._Index["sleitnick_net@0.2.0"]
+    .net["RE/FavoriteItem"]
 
--- Mapping Tier -> Rarity (1-7)
+-- Mapping Tier -> Rarity
 local RarityByTier = {
     [1] = "Common",
     [2] = "Uncommon",
@@ -1240,27 +1329,93 @@ local RarityByTier = {
 -- State
 local autoFavEnabled = false
 local selectedRarities = {}
+local toFavoriteQueue = {}
+local processing = false
 
--- Dropdown Rayfield
+-- Dropdown
 AutoTab:CreateDropdown({
     Name = "Select Fish Rarities",
     Options = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Secret"},
-    CurrentOption = nil,
-    Flag = "FavRarities",
     MultipleOptions = true,
+    CurrentOption = {},
+    Flag = "FavRarities",
     Callback = function(opts)
         selectedRarities = opts
+        print("🎯 Selected rarities:", table.concat(opts, ", "))
     end,
 })
 
--- Toggle Rayfield
+-- Toggle
 AutoTab:CreateToggle({
     Name = "Enable Auto-Favorite",
     CurrentValue = false,
     Callback = function(value)
         autoFavEnabled = value
+        print("Auto Favorite:", value)
     end,
 })
+
+-- =========================================================
+-- 🧰 Helper Function: Refresh Queue
+-- =========================================================
+local function refreshQueue()
+    table.clear(toFavoriteQueue)
+    local items = Data.Data["Inventory"]["Items"]
+    for _, info in pairs(items) do
+        if typeof(info) == "table" and info.Id then
+            local ok, meta = pcall(function()
+                return ItemUtility.GetItemDataFromItemType("Fish", info.Id)
+            end)
+
+            if ok and meta and meta.Data and meta.Data.Type == "Fish" then
+                local rarity = RarityByTier[meta.Data.Tier or 1]
+                if rarity and table.find(selectedRarities, rarity) and not info.Favorited then
+                    table.insert(toFavoriteQueue, {
+                        UUID = info.UUID,
+                        Name = meta.Data.Name or "Unknown",
+                        Rarity = rarity,
+                    })
+                end
+            end
+        end
+    end
+end
+
+-- =========================================================
+-- 🔁 Worker Loop (1 per 0.1 detik)
+-- =========================================================
+task.spawn(function()
+    while true do
+        if autoFavEnabled then
+            if not processing then
+                processing = true
+                refreshQueue()
+
+                if #toFavoriteQueue > 0 then
+                    print(string.format("🔍 Found %d fish to favorite...", #toFavoriteQueue))
+					Rayfield:Notify({
+						Title = "Auto Favorite",
+						Content = (string.format("🔍 Found %d fish to favorite...", #toFavoriteQueue)),
+						Image = "fish-off",
+						Duration = 4
+					})
+                end
+
+                for _, fish in ipairs(toFavoriteQueue) do
+                    pcall(function()
+                        RemoteFavorite:FireServer(fish.UUID)
+                    end)
+                    print(string.format("⭐ Favorited %s | %s | UUID: %s",
+                        fish.Name, fish.Rarity, fish.UUID))
+                    task.wait(0.1)
+                end
+
+                processing = false
+            end
+        end
+        task.wait(0.5) -- cek ulang tiap 3 detik (bukan spam)
+    end
+end)
 
 AutoTab:CreateButton({
     Name = "Unfavorite All Fishes",
@@ -1271,10 +1426,10 @@ AutoTab:CreateButton({
         for _, info in pairs(items) do
             if typeof(info) == "table" and info.Id and info.Favorited == true then
                 local ok, meta = pcall(function()
-                    return ItemUtility.GetItemDataFromItemType("Fishes", info.Id)
+                    return ItemUtility.GetItemDataFromItemType("Fish", info.Id)
                 end)
 
-                if ok and meta and meta.Data and meta.Data.Type == "Fishes" then
+                if ok and meta and meta.Data and meta.Data.Type == "Fish" then
                     -- toggle unfavorite
                     RemoteFavorite:FireServer(info.UUID)
                     unfavCount = unfavCount + 1
@@ -1284,42 +1439,12 @@ AutoTab:CreateButton({
 
         Rayfield:Notify({
             Title = "Unfavorite Complete",
-            Content = "Successfully unfavorited " .. tostring(unfavCount) .. " fishes.",
+            Content = "Successfully unfavorited " .. tostring(unfavCount) .. " fish.",
             Image = "fish-off",
             Duration = 4
         })
     end,
 })
-
-
--- Loop cek inventory
-task.spawn(function()
-    while true do
-        if autoFavEnabled then
-            local items = Data.Data["Inventory"]["Items"]
-
-            for _, info in pairs(items) do
-                if typeof(info) == "table" and info.Id then
-                    local ok, meta = pcall(function()
-                        return ItemUtility.GetItemDataFromItemType("Fishes", info.Id)
-                    end)
-
-                    if ok and meta and meta.Data and meta.Data.Type == "Fishes" then
-                        local rarity = RarityByTier[meta.Data.Tier or 1] or "Unknown"
-
-                        -- hanya favoritkan kalau rarity cocok DAN belum favorit
-                        if table.find(selectedRarities, rarity) and not info.Favorited then
-                            RemoteFavorite:FireServer(info.UUID)
-                            print("Favorited:", meta.Data.Name, rarity, "UUID:", info.UUID)
-                        end
-                    end
-                end
-            end
-        end
-        task.wait(0.1) -- cek tiap 1 detik
-    end
-end)
-
 
 -- =========================================================
 local Section = AutoTab:CreateSection("Auto Equip Best")
