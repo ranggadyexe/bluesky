@@ -247,6 +247,11 @@ local spotCrystalFalls = CFrame.lookAt(
     Vector3.new(-1978.70556640625, -440.0005798339844, 7346.2998046875) + Vector3.new(-0.4962877631187439, 8.985958999119248e-08, 0.8681581020355225)
 )
 
+local spotHalloween = CFrame.lookAt(
+	Vector3.new(2105.46630859375, 81.03092956542969, 3295.840087890625),
+	Vector3.new(2105.46630859375, 81.03092956542969, 3295.840087890625)
+		+ Vector3.new(0.9843165278434753, -4.2261455446279683e-10, 0.17641150951385498)
+)
 
 -- =========================================================
 -- 🔁 Global state
@@ -495,7 +500,7 @@ MainTab:CreateToggle({
 MainTab:CreateToggle({
     Name = "Farm Crystall Falls (EVENT ADMIN SECRET)",
     CurrentValue = false,
-    Flag = "AutoRobotKraken",
+    Flag = "AutoCrystallFalls",
     Callback = function(state)
         _G.AutoRobotKraken = state
 
@@ -519,6 +524,35 @@ MainTab:CreateToggle({
     end,
 })
 
+-- =========================================================
+-- Event Halloween
+
+MainTab:CreateToggle({
+    Name = "Farm Halloween Event",
+    CurrentValue = false,
+    Flag = "AutoHalloween",
+    Callback = function(state)
+        _G.AutoRobotKraken = state
+
+        if not state then
+            if Rayfield.Flags["AutoFishing"].CurrentValue then
+                Rayfield.Flags["AutoFishing"]:Set(false)
+            end
+            return
+        end
+
+        goToSpot(spotHalloween)
+
+        task.spawn(function()
+            while _G.AutoRobotKraken do
+                if not Rayfield.Flags["AutoFishing"].CurrentValue then
+                    Rayfield.Flags["AutoFishing"]:Set(true)
+                end
+                task.wait(5)
+            end
+        end)
+    end,
+})
 -- =========================================================
 -- Robot Kraken
 
