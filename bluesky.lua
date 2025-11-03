@@ -361,10 +361,22 @@ local function getMegalodonProp()
         end
     end
 
-    -- 🔹 Fallback ke children index 19
+    -- 🔹 Fallback ke children index 33
     local child19 = menuRings:GetChildren()[33]
     if child19 then
         local target = child19:FindFirstChild("Megalodon Hunt")
+        if target then
+            local part = target:FindFirstChildWhichIsA("BasePart", true)
+            if part then
+                return part.CFrame
+            end
+        end
+    end
+
+        -- 🔹 Fallback ke children index 26
+    local child26 = menuRings:GetChildren()[26]
+    if child26 then
+        local target = child26:FindFirstChild("Megalodon Hunt")
         if target then
             local part = target:FindFirstChildWhichIsA("BasePart", true)
             if part then
