@@ -1,6 +1,8 @@
 local Players = game:GetService("Players")
 local VirtualUser = game:GetService("VirtualUser")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local WS = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Client = require(ReplicatedStorage.Packages.Replion).Client
@@ -45,13 +47,12 @@ local Window = Rayfield:CreateWindow({
    }
 })
 
-
+local FishingTab = Window:CreateTab("Fishing", "fish")
 local MainTab = Window:CreateTab("Main", "home")
 local AutoTab = Window:CreateTab ("Auto", "repeat")
 local QuestTab = Window:CreateTab("Quest", "list-checks")
 local ShopTab = Window:CreateTab("Shop", "shopping-cart")
 local TeleportTab = Window:CreateTab("Teleport", "map-pin")
-local ConfigTab = Window:CreateTab("Config", "cog")
 
 -- =========================================================
 -- ⚙️ Remote References
@@ -68,84 +69,130 @@ local FishCaughtRemote      = netRoot:WaitForChild("RE/FishCaught")
 local EquipToolRemote       = netRoot:WaitForChild("RE/EquipToolFromHotbar")
 local UnequipToolRemote     = netRoot:WaitForChild("RE/UnequipToolFromHotbar")
 local redeemRemote          = netRoot:WaitForChild("RF/RedeemCode")
-local RF_AutoFishing        = require(ReplicatedStorage.Packages.Net):RemoteFunction("UpdateAutoFishingState")
+local RE_TextEffect         = netRoot:WaitForChild("RE/ReplicateTextEffect")
+local BaitDestroyedRemote   = netRoot:WaitForChild("RE/BaitDestroyed")
+local BaitCastVisual        = netRoot:WaitForChild("RE/BaitCastVisual")
 local FishingController     = require(ReplicatedStorage.Controllers:WaitForChild("FishingController"))
--- =========================================================
--- 🎣 UI Section
-local Section = MainTab:CreateSection("🎣 Auto Fishing")
 
--- =========================================================
--- 🧠 Helper Functions
-local function click(x, y)
-	VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-	VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+
+-- Tuning
+local CLICK_PERIOD  = 0.105  -- > 0.1 s (rate limit di FishingMinigameClick)
+local RECAST_DELAY  = 0.2    -- jeda kecil setelah sesi berakhir sebelum recast
+local USE_HALF_PWR  = true   -- arg3=true => power 0.5 (sesuai decompile, stabil)
+local WATCHDOG_IDLE = 0.5    -- idle tanpa sesi > 0.5s -> paksa cast lagi
+
+-- State
+local active     = false
+local clicking   = false
+local lastGUID   = nil
+local lastCastT  = 0
+
+-- Connections (supaya bisa di-disconnect saat toggle OFF)
+local hbConn
+
+local function castOnce()
+    if not active then return end
+    -- jangan cast kalau sesi masih aktif
+    local okG, guid = pcall(function() return FishingController:GetCurrentGUID() end)
+    if okG and guid then return end
+
+    -- (opsional) kalau mau equip setiap recast, uncomment:
+    EquipToolRemote:FireServer(1)
+
+    local cam = WS.CurrentCamera
+    local center = cam and Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2) or Vector2.new(0,0)
+    local ok = pcall(function()
+        FishingController:RequestChargeFishingRod(center, USE_HALF_PWR)
+    end)
+    if ok then
+        lastCastT = time()
+    end
 end
 
--- =========================================================
--- 🧠 Core logic: enable/disable auto fishing
-local function enableAutoFishing()
-	if autoFishingActive then return end
-	autoFishingActive = true
-
-	EquipToolRemote:FireServer(1)
-	task.wait(0.5)
-
-	RF_AutoFishing:InvokeServer(true)
-	task.wait(0.5)
-
-	print("[AutoFishing] ✅ Enabled.")
-	local lastCatch = tick()
-
-	-- 🪝 Listener: update waktu terakhir saat ikan tertangkap
-	local fishConn
-	local fishEvent = netRoot:WaitForChild("RE/FishCaught")
-	fishConn = fishEvent.OnClientEvent:Connect(function()
-		lastCatch = tick()
-	end)
-
-	-- 🎯 Main click loop
-	autoFishingLoop = task.spawn(function()
-		while autoFishingActive do
-			task.wait(0.05)
-			pcall(function()
-				local gui = LocalPlayer.PlayerGui:FindFirstChild("Fishing")
-				if gui and gui.Main.Display.Minigame.Visible then
-					local mover = gui.Main.Display.Minigame:FindFirstChild("Mover")
-					if mover then
-						local pos = mover.AbsolutePosition + mover.AbsoluteSize / 2
-						click(pos.X, pos.Y)
-					end
-				end
-			end)
-		end
-	end)
-
-	-- ⏱️ Failsafe: kalau tidak ada FishCaught selama 10 detik → re-equip rod
-	task.spawn(function()
-		while autoFishingActive do
-			task.wait(1)
-			local elapsed = tick() - lastCatch
-			if elapsed >= 10 then
-				print(string.format("[AutoFishing] ⚠️ No fish caught for %.1fs → re-equipping rod.", elapsed))
-				pcall(function()
-					EquipToolRemote:FireServer(1)
-				end)
-				lastCatch = tick()
-			end
-		end
-	end)
+local function finishMinigame()
+    if clicking then return end
+    clicking = true
+    while active do
+        local ok, guid = pcall(function() return FishingController:GetCurrentGUID() end)
+        if (not ok) or (not guid) then break end
+        pcall(function() FishingController:RequestFishingMinigameClick() end)
+        task.wait(CLICK_PERIOD)
+    end
+    clicking = false
 end
 
-local function disableAutoFishing()
-	if not autoFishingActive then return end
-	autoFishingActive = false
+local function startLoop()
+    if hbConn then hbConn:Disconnect(); hbConn = nil end
 
-	pcall(function() RF_AutoFishing:InvokeServer(false) end)
-	if autoFishingLoop then
-		task.cancel(autoFishingLoop)
-		autoFishingLoop = nil
-	end
-	print("[AutoFishing] 🛑 Disabled.")
+    hbConn = RunService.Heartbeat:Connect(function()
+        if not active then return end
+        local ok, guid = pcall(function() return FishingController:GetCurrentGUID() end)
+        if not ok then return end
+
+        -- sesi baru dimulai -> spam click
+        if guid and not lastGUID then
+            finishMinigame()
+        end
+
+        -- sesi berakhir (contoh: FishCaught/Stopped) -> recast cepat
+        if (not guid) and lastGUID then
+            task.delay(RECAST_DELAY, castOnce)
+        end
+
+        lastGUID = guid
+
+        -- watchdog: kalau idle kelamaan, paksa cast
+        if (not guid) and (not clicking) and (time() - lastCastT > WATCHDOG_IDLE) then
+            castOnce()
+        end
+    end)
+
+    -- ▶️ equip dulu sebelum cast pertama
+    EquipToolRemote:FireServer(1)
+    task.wait(0.05) -- kecil saja biar sinkron
+    castOnce()      -- kickoff pertama
+end
+
+local function stopLoop()
+    active = false
+    clicking = false
+    lastGUID = nil
+    if hbConn then hbConn:Disconnect(); hbConn = nil end
+end
+
+-- ========== Auto Spam Click (tanpa VirtualInput) ==========
+local clickConn, lastClick = nil, 0
+local CLICK_PERIOD_SAFE = 0.05 -- sesuai guard LastInput<0.1 di FishingController
+
+local function startAutoClickSafe()
+    if clickConn then clickConn:Disconnect() end
+    lastClick = 0
+    clickConn = RunService.Heartbeat:Connect(function()
+        local flag = Rayfield.Flags["AutoClickGUI"]
+        if not (flag and flag.CurrentValue) then return end
+
+        -- cek GUI minigame aktif
+        local pg = LocalPlayer.PlayerGui
+        local gui = pg and pg:FindFirstChild("Fishing")
+        local mg  = gui and gui.Main and gui.Main.Display and gui.Main.Display.Minigame
+
+        if not (mg and mg.Visible) then return end
+
+        -- opsional: pastikan sesi aktif (GUID ada)
+        local ok, guid = pcall(function() return FishingController:GetCurrentGUID() end)
+        if not ok or not guid then return end
+
+        -- klik aman via controller (tanpa sentuh mouse)
+        if time() - lastClick >= CLICK_PERIOD_SAFE then
+            pcall(function() FishingController:RequestFishingMinigameClick() end)
+            lastClick = time()
+        end
+    end)
+end
+
+local function stopAutoClickSafe()
+    if clickConn then clickConn:Disconnect(); clickConn = nil end
+    lastClick = 0
 end
 
 local function DisableAllFishingAnimations()
@@ -254,29 +301,10 @@ local spotHalloween = CFrame.lookAt(
 )
 
 -- =========================================================
--- 🔁 Global state
-local autoFishingLoop = nil
-local autoFishingActive = false
-
--- =========================================================
--- 🎣 Auto Fishing
-MainTab:CreateToggle({
-	Name = "🎣 Auto Fishing",
-	CurrentValue = false,
-	Flag = "AutoFishing",
-	Callback = function(state)
-		if state then
-			enableAutoFishing()
-		else
-			disableAutoFishing()
-		end
-	end,
-})
-
--- =========================================================
 -- Reset Character
+local Section = FishingTab:CreateSection("Reset Character")
 
-MainTab:CreateButton({
+FishingTab:CreateButton({
     Name = "Reset Character",
     Flag = "ResetCharacter",
     Callback = function()
@@ -304,6 +332,185 @@ MainTab:CreateButton({
         -- Teleport ke posisi lama
         task.wait(0.5) -- kasih delay kecil biar loading char selesai
         newHrp.CFrame = lastPos
+    end
+})
+
+local Section = FishingTab:CreateSection("🎣 Auto Fishing (Legit)")
+
+local Fishing = FishingTab:CreateToggle({
+    Name = "Auto Fishing (Legit)",
+    CurrentValue = false,
+    Flag = "AutoFishing",
+    Callback = function(value)
+        if value then
+            active = true
+            startLoop()
+        else
+            stopLoop()
+        end
+    end
+})
+
+FishingTab:CreateToggle({
+    Name = "Auto Spam Click (Only Legit)",
+    CurrentValue = false,
+    Flag = "AutoClickGUI",
+    Callback = function(v)
+        if v then startAutoClickSafe() else stopAutoClickSafe() end
+    end
+})
+
+-- ================== UI: Instant Auto Fishing ==================
+-- default delay (detik) setelah tanda "!" sebelum kirim FishingCompleted
+
+local Section = FishingTab:CreateSection("🎣 Auto Fishing (Instant) -- find your sweet spot with the slider")
+
+local exclaimDelay = 2.5  -- default
+FishingTab:CreateSlider({
+    Name = "Delay to Complete",
+    Range = {0, 5},
+    Increment = 0.01,
+    Suffix = "s",
+    CurrentValue = exclaimDelay,
+    Flag = "AF_InstantDelay",
+    Callback = function(v) exclaimDelay = tonumber(v) or exclaimDelay end
+})
+
+local active, waitingForBite, inProgress = false, false, false
+local hbConn, txtConn, caughtConn
+local RECAST_DELAY, CHARGE_TO_START = 0.05, 0.025
+local SPAM_CAST_PERIOD = 0.02
+local spamThread = nil
+
+local function startFishing()
+	if not active or inProgress then return end
+	inProgress, waitingForBite = true, true
+
+	EquipToolRemote:FireServer(1)
+    task.wait(0.05)
+
+	-- Sinkron waktu
+	local t0 = workspace:GetServerTimeNow()
+
+	-- Charge
+	pcall(function() ChargeRodRemote:InvokeServer(nil,nil,nil,t0) end)
+	task.wait(CHARGE_TO_START)
+
+	-- Lempar
+	local y, power = -1.2, 1
+	pcall(function() RequestMiniGameRemote:InvokeServer(y, power, workspace:GetServerTimeNow()) end)
+
+	inProgress = false
+end
+
+local function stopAll()
+	active, waitingForBite, inProgress = false, false, false
+	if hbConn then hbConn:Disconnect(); hbConn = nil end
+	if txtConn then txtConn:Disconnect(); txtConn = nil end
+	if caughtConn then caughtConn:Disconnect(); caughtConn = nil end
+	local t = spamThread; spamThread = nil
+end
+
+local function startSpamCast()
+    if spamThread then return end
+    spamThread = task.spawn(function()
+        while active do
+            pcall(startFishing)
+            task.wait(SPAM_CAST_PERIOD)
+        end
+        spamThread = nil
+    end)
+end
+
+-- Deteksi "!" → delay sesuai slider → FishingCompleted
+local function bindExclaim()
+	if txtConn then txtConn:Disconnect() end
+	txtConn = RE_TextEffect.OnClientEvent:Connect(function(data)
+		if not active or not waitingForBite then return end
+		local td = data and data.TextData
+		if td and (td.EffectType == "Exclaim" or td.Text == "!") then
+			waitingForBite = false
+			task.delay(exclaimDelay, function()
+				if active then pcall(function() FishingCompleteRemote:FireServer() end) end
+			end)
+		end
+	end)
+end
+
+-- FishCaught → recast cepat
+local function bindCaught()
+	if caughtConn then caughtConn:Disconnect() end
+	caughtConn = FishCaughtRemote.OnClientEvent:Connect(function()
+		if not active then return end
+		task.delay(RECAST_DELAY, startFishing)
+	end)
+end
+
+-- Toggle utama
+FishingTab:CreateToggle({
+	Name = "Auto Fishing (Instant)",
+	CurrentValue = false,
+	Flag = "AutoFishingInstant",
+	Callback = function(on)
+		if on then
+			active = true
+			bindExclaim()
+			bindCaught()
+            startSpamCast()
+			startFishing()
+		else
+			stopAll()
+		end
+	end
+})
+
+local getcon = getconnections or (syn and syn.getconnections) or function() return {} end
+
+local noopConn, watchdogConn
+local function noop(...) end
+
+local function muteOnce()
+    -- putus semua listener kecuali no-op kita
+    for _, c in ipairs(getcon(BaitCastVisual.OnClientEvent)) do
+        if not (c.Function and rawequal(c.Function, noop)) then
+            pcall(function() c:Disable() end)
+            pcall(function() c:Disconnect() end)
+        end
+    end
+    -- pasang listener kosong
+    if not noopConn then
+        noopConn = BaitCastVisual.OnClientEvent:Connect(noop)
+    end
+end
+
+local function startMute()
+    muteOnce()
+    -- watchdog ringan (tiap 0.25s) supaya listener baru langsung diputus
+    if watchdogConn then return end
+    watchdogConn = task.spawn(function()
+        while Rayfield.Flags["MuteBaitCastVisual"] and Rayfield.Flags["MuteBaitCastVisual"].CurrentValue do
+            muteOnce()
+            task.wait(0.25)
+        end
+        watchdogConn = nil
+    end)
+end
+
+local function stopMute()
+    if watchdogConn then watchdogConn = nil end
+    if noopConn then
+        pcall(function() noopConn:Disconnect() end)
+        noopConn = nil
+    end
+    -- tidak mengembalikan listener asli; jika script lain butuh, mereka akan rebind sendiri
+end
+
+FishingTab:CreateToggle({
+    Name = "Disable BaitCastVisual",
+    CurrentValue = false,
+    Flag = "MuteBaitCastVisual",
+    Callback = function(v)
+        if v then startMute() else stopMute() end
     end
 })
 
@@ -1044,57 +1251,7 @@ local Toggle = MainTab:CreateToggle({
         end
     end,
 })
-]]-- =========================================================
--- Redeem code
-local Section = AutoTab:CreateSection("Auto Redeem All Codes")
-
-local Codes = {
-    "BLAMETALON",
-    "SORRY",
-    "TRAVEL",
-    "SHARKSSS",
-    "WORMHYPE",
-    "MEGA",
-    "ARMOR",
-    "SHARKSSS",
-    "100ML",
-    "MUTATE",
-    "WOWSPINS",
-    "FREEBIES",
-    "SORRYSPINS",
-    "THEWHEEL",
-    "100M",
-    "MUTATE",
-    "LOST",
-    "EGGS",
-    "HUNTING",
-    "TROPICAL",
-    "FISHING",
-    "BIGUPD",
-    "VALENTINE",
-    "CONSOLE",
-    "LOBSTAH",
-    "XMAS2024"
-}
-
-AutoTab:CreateButton({
-    Name = "🎁 Redeem All Codes",
-    Callback = function()
-        for _, code in ipairs(Codes) do
-            pcall(function()
-                redeemRemote:InvokeServer(code)
-            end)
-            task.wait(0.3)
-        end
-
-        Rayfield:Notify({
-            Title = "Redeem",
-            Content = "Redeemed all codes",
-            Duration = 3,
-            Image = "circle-check-big"
-        })
-    end
-})
+]]
 
 -- =========================================================
 -- Trade Fish
@@ -1491,7 +1648,7 @@ AutoTab:CreateButton({
         })
     end,
 })
-
+--[[
 -- =========================================================
 local Section = AutoTab:CreateSection("Auto Equip Best")
 -- Auto Best Rod
@@ -1628,7 +1785,7 @@ AutoTab:CreateToggle({
         end
     end,
 })
-
+]]
 
 -- =========================================================
 -- Quest Element
@@ -2609,7 +2766,7 @@ local Button = ShopTab:CreateButton({
         end
     end,
 })
-
+--[[
 local Section = ShopTab:CreateSection("Buy Weather Event")
 
 --// Data Weather Events
@@ -2769,6 +2926,7 @@ local Button = ShopTab:CreateButton({
         end
     end,
 })
+]]
 
 -- =========================================================
 -- Teleport to Islands
