@@ -556,72 +556,25 @@ local player = game.Players.LocalPlayer
 
 --// 🎯 Fokus hanya ke Megalodon Hunt
 local function getMegalodonProp()
-    local menuRings = workspace:FindFirstChild("!!! MENU RINGS") 
+    local menuRings = workspace:FindFirstChild("!!! MENU RINGS")
     if not menuRings then 
+        warn("[MegalodonFinder] !!! MENU RINGS tidak ditemukan")
         return nil 
     end
 
-    -- 🔹 Cek jalur Props langsung
-    local props = menuRings:FindFirstChild("Props")
-    if props then
-        local target = props:FindFirstChild("Megalodon Hunt")
-        if target then
-            local part = target:FindFirstChildWhichIsA("BasePart", true)
+    -- Cek semua descendant di dalam "!!! MENU RINGS"
+    for _, descendant in ipairs(menuRings:GetDescendants()) do
+        if descendant.Name == "Megalodon Hunt" then
+            local part = descendant:FindFirstChildWhichIsA("BasePart", true)
             if part then
+                print("[MegalodonFinder] Ditemukan Megalodon Hunt di:", descendant:GetFullName())
                 return part.CFrame
             end
         end
     end
 
-    -- 🔹 Fallback ke children index 33
-    local child33 = menuRings:GetChildren()[33]
-    if child33 then
-        local target = child33:FindFirstChild("Megalodon Hunt")
-        if target then
-            local part = target:FindFirstChildWhichIsA("BasePart", true)
-            if part then
-                return part.CFrame
-            end
-        end
-    end
-
-        -- 🔹 Fallback ke children index 26
-    local child26 = menuRings:GetChildren()[26]
-    if child26 then
-        local target = child26:FindFirstChild("Megalodon Hunt")
-        if target then
-            local part = target:FindFirstChildWhichIsA("BasePart", true)
-            if part then
-                return part.CFrame
-            end
-        end
-    end
-
-        -- 🔹 Fallback ke children index 28
-    local child28 = menuRings:GetChildren()[28]
-    if child28 then
-        local target = child28:FindFirstChild("Megalodon Hunt")
-        if target then
-            local part = target:FindFirstChildWhichIsA("BasePart", true)
-            if part then
-                return part.CFrame
-            end
-        end
-    end
-
-        -- 🔹 Fallback ke children index 22
-    local child22 = menuRings:GetChildren()[22]
-    if child22 then
-        local target = child22:FindFirstChild("Megalodon Hunt")
-        if target then
-            local part = target:FindFirstChildWhichIsA("BasePart", true)
-            if part then
-                return part.CFrame
-            end
-        end
-    end
-
-    return nil -- ❌ Tidak ada Megalodon Hunt
+    warn("[MegalodonFinder] Tidak menemukan Megalodon Hunt di dalam MENU RINGS")
+    return nil
 end
 
 --// 🪵 Platform Props
