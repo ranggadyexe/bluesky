@@ -597,6 +597,18 @@ local function getMegalodonProp()
         end
     end
 
+        -- 🔹 Fallback ke children index 28
+    local child26 = menuRings:GetChildren()[28]
+    if child26 then
+        local target = child26:FindFirstChild("Megalodon Hunt")
+        if target then
+            local part = target:FindFirstChildWhichIsA("BasePart", true)
+            if part then
+                return part.CFrame
+            end
+        end
+    end
+
     return nil -- ❌ Tidak ada Megalodon Hunt
 end
 
@@ -701,65 +713,6 @@ MainTab:CreateToggle({
     end,
 })
 
--- =========================================================
--- Event Secret Admin
-
-MainTab:CreateToggle({
-    Name = "Farm Crystall Falls (EVENT ADMIN SECRET)",
-    CurrentValue = false,
-    Flag = "AutoCrystallFalls",
-    Callback = function(state)
-        _G.AutoRobotKraken = state
-
-        if not state then
-            if Rayfield.Flags["AutoFishing"].CurrentValue then
-                Rayfield.Flags["AutoFishing"]:Set(false)
-            end
-            return
-        end
-
-        goToSpot(spotCrystalFalls)
-
-        task.spawn(function()
-            while _G.AutoRobotKraken do
-                if not Rayfield.Flags["AutoFishing"].CurrentValue then
-                    Rayfield.Flags["AutoFishing"]:Set(true)
-                end
-                task.wait(5)
-            end
-        end)
-    end,
-})
-
--- =========================================================
--- Event Halloween
-
-MainTab:CreateToggle({
-    Name = "Farm Halloween Event",
-    CurrentValue = false,
-    Flag = "AutoHalloween",
-    Callback = function(state)
-        _G.AutoRobotKraken = state
-
-        if not state then
-            if Rayfield.Flags["AutoFishing"].CurrentValue then
-                Rayfield.Flags["AutoFishing"]:Set(false)
-            end
-            return
-        end
-
-        goToSpot(spotHalloween)
-
-        task.spawn(function()
-            while _G.AutoRobotKraken do
-                if not Rayfield.Flags["AutoFishing"].CurrentValue then
-                    Rayfield.Flags["AutoFishing"]:Set(true)
-                end
-                task.wait(5)
-            end
-        end)
-    end,
-})
 -- =========================================================
 -- Robot Kraken
 
@@ -1114,7 +1067,7 @@ MainTab:CreateToggle({
                     simplifyPart(obj)
                 end)
             end
-			DisableAllFishingAnimations()
+            DisableAllFishingAnimations()
         else
         end
     end,
