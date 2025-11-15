@@ -107,7 +107,7 @@ local function teleportNearTarget()
     local mHRP = myChar:FindFirstChild("HumanoidRootPart")
     if not (tHRP and mHRP) then return end
 
-    mHRP.CFrame = tHRP.CFrame * CFrame.new(3, 0, 0)
+    mHRP.CFrame = tHRP.CFrame * CFrame.new(4, 0, 0)
 end
 
 local function getTargetName()
@@ -786,3 +786,14 @@ UtilityTab:CreateToggle({
         end
     end
 })
+
+-- =========================================================
+-- Config
+task.defer(function()
+   Rayfield:LoadConfiguration()
+   Rayfield:Notify({
+       Title = "Config Loaded",
+       Content = "Configuration has been automatically loaded for " .. LocalPlayer.Name,
+       Duration = 3
+   })
+end)

@@ -7,6 +7,7 @@ local LocalPlayer = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Client = require(ReplicatedStorage.Packages.Replion).Client
 local Data = Client:WaitReplion("Data")
+local ItemUtility = require(ReplicatedStorage.Shared.ItemUtility)
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
@@ -67,7 +68,6 @@ local RequestMiniGameRemote = netRoot:WaitForChild("RF/RequestFishingMinigameSta
 local FishingCompleteRemote = netRoot:WaitForChild("RE/FishingCompleted")
 local FishCaughtRemote      = netRoot:WaitForChild("RE/FishCaught")
 local EquipToolRemote       = netRoot:WaitForChild("RE/EquipToolFromHotbar")
-local UnequipToolRemote     = netRoot:WaitForChild("RE/UnequipToolFromHotbar")
 local redeemRemote          = netRoot:WaitForChild("RF/RedeemCode")
 local RE_TextEffect         = netRoot:WaitForChild("RE/ReplicateTextEffect")
 local BaitDestroyedRemote   = netRoot:WaitForChild("RE/BaitDestroyed")
@@ -89,6 +89,7 @@ local lastCastT  = 0
 
 -- Connections (supaya bisa di-disconnect saat toggle OFF)
 local hbConn
+local baitConn
 
 local function castOnce()
     if not active then return end
@@ -123,41 +124,49 @@ end
 
 local function startLoop()
     if hbConn then hbConn:Disconnect(); hbConn = nil end
+    if baitConn then baitConn:Disconnect(); baitConn = nil end
 
-    hbConn = RunService.Heartbeat:Connect(function()
+        hbConn = RunService.Heartbeat:Connect(function()
         if not active then return end
         local ok, guid = pcall(function() return FishingController:GetCurrentGUID() end)
         if not ok then return end
 
-        -- sesi baru dimulai -> spam click
         if guid and not lastGUID then
             finishMinigame()
         end
 
-        -- sesi berakhir (contoh: FishCaught/Stopped) -> recast cepat
-        if (not guid) and lastGUID then
-            task.delay(RECAST_DELAY, castOnce)
-        end
-
         lastGUID = guid
 
-        -- watchdog: kalau idle kelamaan, paksa cast
         if (not guid) and (not clicking) and (time() - lastCastT > WATCHDOG_IDLE) then
             castOnce()
         end
     end)
 
+
+    -- 🔔 listen ke BaitDestroyed buat recast
+    baitConn = BaitDestroyedRemote.OnClientEvent:Connect(function(...)
+        if not active then return end
+        -- kasih sedikit delay kalau mau aman, boleh juga RECAST_DELAY langsung
+        task.delay(RECAST_DELAY, function()
+            if active then
+                castOnce()
+            end
+        end)
+    end)
+
     -- ▶️ equip dulu sebelum cast pertama
     EquipToolRemote:FireServer(1)
-    task.wait(0.05) -- kecil saja biar sinkron
-    castOnce()      -- kickoff pertama
+    task.wait(0.05)
+    castOnce()
 end
 
 local function stopLoop()
     active = false
     clicking = false
     lastGUID = nil
+
     if hbConn then hbConn:Disconnect(); hbConn = nil end
+    if baitConn then baitConn:Disconnect(); baitConn = nil end
 end
 
 -- ========== Auto Spam Click (tanpa VirtualInput) ==========
@@ -193,6 +202,80 @@ end
 local function stopAutoClickSafe()
     if clickConn then clickConn:Disconnect(); clickConn = nil end
     lastClick = 0
+end
+
+local function ResetCharacter()
+    -- matikan autofishing dulu kalau ada
+    local autoFlag = Rayfield.Flags["AutoFishing"]
+    if autoFlag and autoFlag.Set then
+        pcall(function()
+            autoFlag:Set(false)
+        end)
+    end
+
+    local player = game.Players.LocalPlayer
+    local char = player.Character
+    if not char then return end
+
+    -- Simpan posisi sebelum reset
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local lastPos = hrp.CFrame
+
+    -- Matikan karakter (set health 0)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.Health = 0
+    end
+
+    -- Tunggu respawn
+    player.CharacterAdded:Wait()
+    local newChar = player.Character or player.CharacterAdded:Wait()
+    local newHrp = newChar:WaitForChild("HumanoidRootPart")
+
+    -- Teleport ke posisi lama
+    task.wait(0.5)
+    newHrp.CFrame = lastPos
+end
+
+local function ResetFishing()
+    -- matikan autofishing dulu kalau ada
+    local autoFlag = Rayfield.Flags["AutoFishing"]
+    if autoFlag and autoFlag.Set then
+        pcall(function()
+            autoFlag:Set(false)
+        end)
+    end
+
+    local player = game.Players.LocalPlayer
+    local char = player.Character
+    if not char then return end
+
+    -- Simpan posisi sebelum reset
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local lastPos = hrp.CFrame
+
+    -- Matikan karakter (set health 0)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.Health = 0
+    end
+
+    -- Tunggu respawn
+    player.CharacterAdded:Wait()
+    local newChar = player.Character or player.CharacterAdded:Wait()
+    local newHrp = newChar:WaitForChild("HumanoidRootPart")
+
+    -- Teleport ke posisi lama
+    task.wait(0.5)
+    newHrp.CFrame = lastPos
+    task.wait(0.5)
+    if autoFlag and autoFlag.Set then
+        pcall(function()
+            autoFlag:Set(true)
+        end)
+    end
 end
 
 local function DisableAllFishingAnimations()
@@ -289,16 +372,12 @@ local spotRobotKraken = CFrame.lookAt(
     Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, -8.57e-08, 0.720)
 )
 
-local spotCrystalFalls = CFrame.lookAt(
-    Vector3.new(-1978.70556640625, -440.0005798339844, 7346.2998046875),
-    Vector3.new(-1978.70556640625, -440.0005798339844, 7346.2998046875) + Vector3.new(-0.4962877631187439, 8.985958999119248e-08, 0.8681581020355225)
+local spotCrater = CFrame.lookAt(
+    Vector3.new(1044.144775390625, 2.2233667373657227, 5020.09619140625),
+    Vector3.new(1044.144775390625, 2.2233667373657227, 5020.09619140625)
+        + Vector3.new(-0.5718123912811279, 3.73610191672924e-08, 0.8203843832015991)
 )
 
-local spotHalloween = CFrame.lookAt(
-	Vector3.new(2105.46630859375, 81.03092956542969, 3295.840087890625),
-	Vector3.new(2105.46630859375, 81.03092956542969, 3295.840087890625)
-		+ Vector3.new(0.9843165278434753, -4.2261455446279683e-10, 0.17641150951385498)
-)
 
 -- =========================================================
 -- Reset Character
@@ -306,34 +385,76 @@ local Section = FishingTab:CreateSection("Reset Character")
 
 FishingTab:CreateButton({
     Name = "Reset Character",
-    Flag = "ResetCharacter",
     Callback = function()
-        Rayfield.Flags["AutoFishing"]:Set(false)
-        local player = game.Players.LocalPlayer
-        local char = player.Character
-        if not char then return end
-
-        -- Simpan posisi sebelum reset
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        local lastPos = hrp.CFrame
-
-        -- Matikan karakter (set health 0)
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.Health = 0
-        end
-
-        -- Tunggu respawn
-        player.CharacterAdded:Wait()
-        local newChar = player.Character or player.CharacterAdded:Wait()
-        local newHrp = newChar:WaitForChild("HumanoidRootPart")
-
-        -- Teleport ke posisi lama
-        task.wait(0.5) -- kasih delay kecil biar loading char selesai
-        newHrp.CFrame = lastPos
+        ResetCharacter()
     end
 })
+
+
+-- ===== Anti Stuck DEBUG (toggle + paragraph + timer + reset after 15s) =====
+local antiTimerEnabled = false
+local antiTimer = 0
+
+-- Paragraph
+local antiTimerPara = FishingTab:CreateParagraph({
+    Title = "Anti Stuck Timer",
+    Content = "Status: OFF | Timer: 0 s",
+})
+
+FishCaughtRemote.OnClientEvent:Connect(function()
+    if not antiTimerEnabled then return end
+
+    antiTimer = 0
+
+    if antiTimerPara then
+        antiTimerPara:Set({
+            Title = "Anti Stuck Timer",
+            Content = "Status: ON | Timer: 0 s",
+        })
+    end
+end)
+
+
+-- Toggle
+FishingTab:CreateToggle({
+    Name = "Anti Stuck (will reset fishing if 15s not caught fish)",
+    CurrentValue = false,
+    Flag = "AntiStuckDebug",
+    Callback = function(state)
+        antiTimerEnabled = state
+        antiTimer = 0
+
+        if not state then
+            antiTimerPara:Set({
+                Title = "Anti Stuck Timer",
+                Content = "Status: OFF | Timer: 0 s",
+            })
+        end
+    end,
+})
+
+task.spawn(function()
+    while task.wait(1) do
+        if antiTimerEnabled then
+            antiTimer = antiTimer + 1
+            antiTimerPara:Set({
+                Title = "Anti Stuck Timer",
+                Content = string.format("Status: ON | Timer: %d s", antiTimer),
+            })
+
+            if antiTimer >= 15 then
+                ResetFishing()
+                antiTimer = 0
+            end
+        else
+            antiTimer = 0
+            antiTimerPara:Set({
+                Title = "Anti Stuck Timer",
+                Content = "Status: OFF | Timer: 0 s",
+            })
+        end
+    end
+end)
 
 local Section = FishingTab:CreateSection("🎣 Auto Fishing (Legit)")
 
@@ -607,7 +728,7 @@ end
 local function startAutoMegalodon()
     if loopTask then return end -- biar ga dobel
 
-    goToSpot(spotSacredTemple + Vector3.new(0, 2, 0))
+    goToSpot(spotCrater + Vector3.new(0, 2, 0))
     activeMode = "BestSpot"
 
     loopTask = task.spawn(function()
@@ -634,7 +755,7 @@ local function startAutoMegalodon()
                     if activeMode ~= "BestSpot" then
                         print("📍 Megalodon hilang → teleport ke BestSpot")
                         removePropsPlatform()
-                        goToSpot(spotSacredTemple + Vector3.new(0, 2, 0))
+                        goToSpot(spotCrater + Vector3.new(0, 2, 0))
                         activeMode = "BestSpot"
                     end
                 end
@@ -765,12 +886,6 @@ local Section = MainTab:CreateSection("Auto Sell")
 MainTab:CreateButton({
     Name = "Sell All Items",
     Callback = function()
-        local netRoot = game:GetService("ReplicatedStorage")
-            :WaitForChild("Packages")
-            :WaitForChild("_Index")
-            :WaitForChild("sleitnick_net@0.2.0")
-            :WaitForChild("net")
-
         local SellAll = netRoot:WaitForChild("RF/SellAllItems")
         SellAll:InvokeServer() -- langsung jalankan
 
@@ -818,11 +933,6 @@ MainTab:CreateToggle({
 
         -- ✅ Start the loop
         autoSellThread = task.spawn(function()
-            local netRoot = game:GetService("ReplicatedStorage")
-                :WaitForChild("Packages")
-                :WaitForChild("_Index")
-                :WaitForChild("sleitnick_net@0.2.0")
-                :WaitForChild("net")
 
             local SellAll = netRoot:WaitForChild("RF/SellAllItems")
 
@@ -846,11 +956,6 @@ MainTab:CreateToggle({
     CurrentValue = false,
     Flag = "OxygenTank",
     Callback = function(Value)
-        local netRoot = game:GetService("ReplicatedStorage")
-            :WaitForChild("Packages")
-            :WaitForChild("_Index")
-            :WaitForChild("sleitnick_net@0.2.0")
-            :WaitForChild("net")
 
         if Value then
             -- ✅ Equip
@@ -872,11 +977,6 @@ MainTab:CreateToggle({
     CurrentValue = false,
     Flag = "FishingRadar",
     Callback = function(Value)
-        local netRoot = game:GetService("ReplicatedStorage")
-            :WaitForChild("Packages")
-            :WaitForChild("_Index")
-            :WaitForChild("sleitnick_net@0.2.0")
-            :WaitForChild("net")
 
         local RadarRemote = netRoot:WaitForChild("RF/UpdateFishingRadar")
 
@@ -1218,8 +1318,234 @@ local function teleportNearTarget()
     local mHRP = myChar:FindFirstChild("HumanoidRootPart")
     if not (tHRP and mHRP) then return end
 
-    mHRP.CFrame = tHRP.CFrame * CFrame.new(3, 0, 0)
+    mHRP.CFrame = tHRP.CFrame * CFrame.new(4, 0, 0)
 end
+
+local function getTargetName()
+    if not targetUserId then return "N/A" end
+    -- kalau target masih ada di server yang sama:
+    local plr = Players:GetPlayerByUserId(targetUserId)
+    if plr then return plr.Name end
+    -- fallback ke API async:
+    local ok, name = pcall(function()
+        return Players:GetNameFromUserIdAsync(targetUserId)
+    end)
+    return ok and name or tostring(targetUserId)
+end
+
+local function getWeight(info)
+	if not info then return "?" end
+	local w = (info.Metadata and (info.Metadata.Weight or info.Metadata.weight))
+	       or info.Weight or info.weight
+	if typeof(w) == "number" then
+		return string.format("%.2f", w)
+	end
+	return tostring(w or "?")
+end
+
+local function getMutation(info)
+	if not info then return "-" end
+	-- coba beberapa kemungkinan penamaan/struktur
+	local m = info.VariantId or (info.Metadata and (info.Metadata.VariantId or info.Metadata.variantId or info.Metadata.VariantID))
+	if typeof(m) == "table" then
+		-- bila berupa list, gabungkan jadi teks
+		local t = {}
+		for k,v in pairs(m) do
+			table.insert(t, tostring(v))
+		end
+		table.sort(t)
+		return (#t > 0 and table.concat(t, ", ")) or "-"
+	elseif m == nil then
+		return "-"
+	else
+		return tostring(m)
+	end
+end
+
+local function getFishMeta(info)
+    if typeof(info) ~= "table" or not info.Id then return nil end
+    local ok, meta = pcall(function()
+        return ItemUtility.GetItemDataFromItemType("Fish", info.Id)
+    end)
+    if ok and meta and meta.Data and meta.Data.Type == "Fish" then
+        return meta
+    end
+    return nil
+end
+
+local function isFavorited(info)
+    if info and info.Metadata and info.Metadata.Favorited ~= nil then
+        return info.Metadata.Favorited == true
+    end
+    return info and info.Favorited == true
+end
+
+local function countFishById(id, skipFav)
+    local inv = Data and Data.Data and Data.Data.Inventory and Data.Data.Inventory.Items
+    if not inv then return 0 end
+    local c = 0
+    for _, info in pairs(inv) do
+        if info and info.Id == id then
+            local meta = getFishMeta(info)
+            if meta and (not skipFav or not isFavorited(info)) then
+                c = c + 1
+            end
+        end
+    end
+    return c
+end
+
+-- ambil satu instance Fish (UUID) untuk Id tertentu
+local function findOneFishInstance(id, skipFav)
+	local inv = Data and Data.Data and Data.Data.Inventory and Data.Data.Inventory.Items
+	if not inv then return nil end
+	for _, info in pairs(inv) do
+		if info and info.Id == id then
+			local meta = getFishMeta(info)
+			if meta and (not skipFav or not isFavorited(info)) then
+				return {
+					UUID     = info.UUID,
+					Name     = meta.Data.Name or "Fish",
+					Id       = id,
+					Weight   = getWeight(info),
+					Mutation = getMutation(info),
+				}
+			end
+		end
+	end
+	return nil
+end
+
+-- bangun antrean SPESIES (unik per Id) + hitung total ikan unfavorit
+local function buildSpeciesQueue(skipFav)
+    local inv = Data and Data.Data and Data.Data.Inventory and Data.Data.Inventory.Items
+    local seen, queue, totalCnt = {}, {}, 0
+    if not inv then return queue, 0 end
+    for _, info in pairs(inv) do
+        if info and info.Id then
+            local meta = getFishMeta(info)
+            if meta and (not skipFav or not isFavorited(info)) then
+                if not seen[info.Id] then
+                    seen[info.Id] = true
+                    table.insert(queue, { Id = info.Id, Name = meta.Data.Name or "Fish" })
+                end
+                totalCnt = totalCnt + 1
+            end
+        end
+    end
+    return queue, totalCnt
+end
+
+local function countAllEligibleFish(skipFav)
+    local inv = Data and Data.Data and Data.Data.Inventory and Data.Data.Inventory.Items
+    if not inv then return 0 end
+    local total = 0
+    for _, info in pairs(inv) do
+        if info and info.Id then
+            local meta = getFishMeta(info)
+            if meta and (not skipFav or not isFavorited(info)) then
+                total = total + 1
+            end
+        end
+    end
+    return total
+end
+
+--[[ === 🎣 Fish Inventory Overview (Live Full Rarity) ===
+
+-- Mapping Tier -> Rarity
+local RarityByTier = {
+    [1] = "Common",
+    [2] = "Uncommon",
+    [3] = "Rare",
+    [4] = "Epic",
+    [5] = "Legendary",
+    [6] = "Mythic",
+    [7] = "Secret",
+}
+
+-- helper ambil rarity dari meta fish
+local function getFishRarityFromMeta(meta)
+    if not (meta and meta.Data) then return nil end
+    local tier = meta.Data.Tier or 1
+    return RarityByTier[tier] or "Unknown"
+end
+
+-- helper opsional buat format angka
+local function fmt(n)
+    return tostring(n):reverse():gsub("(%d%d%d)","%1,"):reverse():gsub("^,","")
+end
+
+-- urutan tampilan rarity
+local rarityOrder = {"Common","Uncommon","Rare","Epic","Legendary","Mythic","Secret"}
+
+-- hitung semua rarity + unfavorited
+local function countAllFishRarities()
+    local inv = Data and Data.Data and Data.Data.Inventory and Data.Data.Inventory.Items
+    if not inv then return {}, 0 end
+
+    local counts = {
+        Common = 0,
+        Uncommon = 0,
+        Rare = 0,
+        Epic = 0,
+        Legendary = 0,
+        Mythic = 0,
+        Secret = 0,
+    }
+    local unfavCount = 0
+
+    for _, info in pairs(inv) do
+        if info and info.Id then
+            local meta = getFishMeta(info)
+            if meta and meta.Data and meta.Data.Type == "Fish" then
+                local rarity = getFishRarityFromMeta(meta)
+                if counts[rarity] ~= nil then
+                    counts[rarity] = counts[rarity] + 1
+                end
+                if not isFavorited(info) then
+                    unfavCount = unfavCount + 1
+                end
+            end
+        end
+    end
+
+    return counts, unfavCount
+end
+
+-- buat paragraf GUI
+local fishPara = AutoTab:CreateParagraph({
+    Title = "🎣 Fish Inventory Overview",
+    Content = "Loading fish data...",
+})
+
+-- loop update tiap 2 detik
+task.spawn(function()
+    while task.wait(2) do
+        pcall(function()
+            local counts, unfav = countAllFishRarities()
+            local lines = {}
+
+            -- tampilkan HANYA rarity yang > 0
+            for _, r in ipairs(rarityOrder) do
+                local c = counts[r] or 0
+                if c > 0 then
+                    table.insert(lines, string.format("%s = %s", r, fmt(c)))
+                end
+            end
+
+            -- baris tetap (selalu tampil)
+            table.insert(lines, string.format("Unfavorited = %s", fmt(unfav)))
+            table.insert(lines, "Price (Unfavorited) = —") -- isi nanti kalau sudah siap
+
+            fishPara:Set({
+                Title   = "🎣 Fish Inventory Overview",
+                Content = table.concat(lines, "\n")
+            })
+        end)
+    end
+end)
+]]
 
 -- =========================================================
 -- 🎛️ UI
@@ -1273,15 +1599,6 @@ AutoTab:CreateToggle({
     end
 })
 
-AutoTab:CreateToggle({
-    Name = "Skip Enchant Stone",
-    CurrentValue = true,
-    Callback = function(state)
-        skipEnchantStone = state
-        print("[Trade] Skip Enchant Stone:", state)
-    end
-})
-
 -- =========================================================
 -- 🚀 Main Auto Trade Toggle
 AutoTab:CreateToggle({
@@ -1289,7 +1606,6 @@ AutoTab:CreateToggle({
     CurrentValue = false,
     Callback = function(state)
         tradingActive = state
-
         if not tradingActive then
             notify("Info", "Auto Trade stopped", "circle-off")
             return
@@ -1302,96 +1618,119 @@ AutoTab:CreateToggle({
             return
         end
 
+        -- 1) Scan: species unik + total ikan (respect skipFavorited)
+        local speciesQueue, totalFish = buildSpeciesQueue(skipFavorited)
+        if totalFish == 0 then
+            tradingActive = false
+            notify("Info", "Tidak ada Fish yang memenuhi kriteria.", "circle-help")
+            return
+        end
+
+        Rayfield:Notify({
+            Title = "Auto Trade",
+            Content = ("Ditemukan " .. totalFish .. " Fish yang akan dikirim"
+                .. (skipFavorited and " (skip favorit ON)" or " (skip favorit OFF)")),
+            Duration = 4,
+            Image = "fish"
+        })
+
         notify("Starting", "Auto Trade started.", "arrow-right-left")
 
+        local currentUUID = nil
+
         task.spawn(function()
-            while tradingActive do
-                teleportNearTarget()
+            for si, spec in ipairs(speciesQueue) do
+                if not tradingActive then break end
 
-                local rods = Data.Data and Data.Data["Inventory"] and Data.Data["Inventory"]["Items"]
-                if rods then
-                    local tradedSomething = false
-
-                    for uuid, rodData in pairs(rods) do
-                        if not tradingActive then break end
-
-                        if rodData.UUID then
-                            -- ambil status favorit
-                            local favoritedValue = rodData.Favorited
-                            if rodData.Metadata and rodData.Metadata.Favorited ~= nil then
-                                favoritedValue = rodData.Metadata.Favorited
-                            end
-
-                            -- daftar ID yang di-skip (enchant dll)
-                            local skipIds = {
-                                [10] = true,
-                                [81] = true,
-                                [105] = true,
-                                [125] = true,
-                                [246] = true
-                            }
-
-                            -- logika filter utama
-                            local shouldTrade =
-                                rodData.UUID and
-                                (not skipFavorited or (favoritedValue == nil or favoritedValue == false)) and
-                                (not skipEnchantStone or not skipIds[rodData.Id])
-
-                            if shouldTrade then
-                                tradedSomething = true
-                                print(string.format("[TRADE] Kirim item: %s | ID:%s | Fav:%s", rodData.Name or "Unknown", rodData.Id, tostring(favoritedValue)))
-
-                                -- kirim item
-                                local ok, res = pcall(function()
-                                    return remote:InvokeServer(targetUserId, rodData.UUID)
-                                end)
-
-                                if ok then
-                                    Rayfield:Notify({
-                                        Title = "Trading",
-                                        Content = "Mengirim " .. (rodData.Name or "item") .. "...",
-                                        Duration = 2,
-                                        Image = "arrow-right-left"
-                                    })
-
-                                    -- tunggu sampai item hilang dari inventory
-                                    local startTime = tick()
-                                    while Data.Data.Inventory.Items[rodData.UUID] and tick() - startTime < 10 do
-                                        task.wait(0.2)
-                                    end
-
-                                    if Data.Data.Inventory.Items[rodData.UUID] then
-                                        warn(string.format("[TRADE] %s belum hilang setelah 10 detik, lanjut item berikutnya.", rodData.Name or "Unknown"))
-                                    else
-                                        print(string.format("[TRADE] %s berhasil dikirim!", rodData.Name or "Unknown"))
-                                    end
-                                else
-                                    warn("[TRADE] Gagal kirim item:", rodData.Name)
-                                end
-
-                                -- jeda sedikit sebelum lanjut item berikutnya
-                                task.wait(0.5)
-                            end
-                        end
-                    end
-
-                    if not tradedSomething then
-                        Rayfield:Notify({
-                            Title = "Success",
-                            Content = "Trading Done",
-                            Duration = 3,
-                            Image = "circle-check-big"
-                        })
+                while tradingActive do
+                    -- 1) cek jumlah ikan eligible (semua spesies)
+                    local remainingAll = countAllEligibleFish(skipFavorited)
+                    if remainingAll <= 0 then
+                        print("[TRADE] Tidak ada ikan tersisa.")
                         tradingActive = false
                         break
                     end
-                else
-                    -- kalau rods belum ready
-                    task.wait(1)
-                end
 
-                task.wait(1.5)
+                    -- 2) kalau spesies ini sudah habis (respect skipFav), lanjut spesies berikutnya
+                    local speciesRemain = countFishById(spec.Id, skipFavorited)
+                    if speciesRemain <= 0 then
+                        break
+                    end
+
+                    teleportNearTarget()
+
+                    -- 3) pegang UUID yang sama sampai benar-benar hilang
+                    local inst
+                    if currentUUID and Data.Data.Inventory.Items[currentUUID] then
+                        local info = Data.Data.Inventory.Items[currentUUID]
+                        local meta = getFishMeta(info)
+                        inst = {
+                            UUID     = currentUUID,
+                            Id       = info.Id,
+                            Name     = (meta and meta.Data and meta.Data.Name) or "Fish",
+                            Weight   = getWeight(info),
+                            Mutation = getMutation(info),
+                        }
+                    else
+                        inst = findOneFishInstance(spec.Id, skipFavorited)
+                        if not inst then break end -- sisa spesies ini favorit semua
+                        currentUUID = inst.UUID
+                    end
+
+                    -- 4) NOTIFY format baru: "Trading X Ikan Tersisa"
+                    Rayfield:Notify({
+                        Title   = ("Trading " .. tostring(remainingAll) .. " Ikan Tersisa"),
+                        Content = string.format("%s | %s | %s | -> %s",
+                            inst.Name or "Fish",
+                            inst.Weight or "?",
+                            inst.Mutation or "-",
+                            getTargetName()
+                        ),
+                        Duration = 2,
+                        Image = "arrow-right-left"
+                    })
+
+                    -- 5) kirim & konfirmasi: sukses hanya jika UUID hilang
+                    local sendOk = pcall(function()
+                        return remote:InvokeServer(targetUserId, inst.UUID)
+                    end)
+
+                    local confirmed = false
+                    if sendOk then
+                        local start = tick()
+                        while true do
+                            if Data.Data.Inventory.Items[inst.UUID] == nil then
+                                confirmed = true
+                                break
+                            end
+                            if tick() - start > 20 then
+                                warn(("[TRADE] Timeout menunggu %s (UUID:%s) hilang; retry.")
+                                    :format(inst.Name, inst.UUID))
+                                break
+                            end
+                            task.wait(0.25)
+                        end
+                    else
+                        warn("[TRADE] Gagal invoke:", inst.Name, inst.UUID)
+                    end
+
+                    -- 6) bila sukses, reset UUID dan (opsional) tampilkan notif sisa terbaru
+                    if confirmed then
+                        currentUUID = nil
+                        local newRemain = countAllEligibleFish(skipFavorited)
+                    end
+
+                    task.wait(0.3)
+                end
             end
+
+            Rayfield:Notify({
+                Title = "Success",
+                Content = "Trading Selesai " .. totalFish .. " Ikan Sudah Terkirim",
+                Duration = 5,
+                Image = "circle-check-big"
+            })
+            tradingActive = false
         end)
     end
 })
@@ -1566,6 +1905,52 @@ AutoTab:CreateButton({
         })
     end,
 })
+
+-- =========================================================
+-- 🎯 Config: 4 Ikan Khusus
+-- =========================================================
+local SpecialFishIds = {
+    [263] = true,
+    [283] = true,
+    [284] = true,
+    [270] = true,
+}
+
+local autoFavSpecialEnabled = false
+
+task.spawn(function()
+    while true do
+        if autoFavSpecialEnabled then
+            local items = Data.Data.Inventory.Items
+            
+            for _, info in pairs(items) do
+                if typeof(info) == "table" and info.Id and not info.Favorited then
+                    local ok, meta = pcall(function()
+                        return ItemUtility.GetItemDataFromItemType("Fish", info.Id)
+                    end)
+
+                    if ok and meta and SpecialFishIds[meta.Data.Id] then
+                        RemoteFavorite:FireServer(info.UUID)
+                        print("⭐ Auto-Favorited Special:", meta.Data.Name)
+                        task.wait(0.1)
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+AutoTab:CreateToggle({
+    Name = "Auto Favorite 4 Fish Ancient Ruin",
+    Flag = "AutoFav4SpecialFish",
+    CurrentValue = false,
+    Callback = function(v)
+        autoFavSpecialEnabled = v
+    end,
+})
+
+
 --[[
 -- =========================================================
 local Section = AutoTab:CreateSection("Auto Equip Best")
@@ -2083,69 +2468,6 @@ QuestTab:CreateToggle({
     end,
 })
 
-
--- target artifact IDs
-local targetIDs = {
-    [265] = "Arrow",
-    [266] = "Crescent",
-    [267] = "Diamond",
-    [271] = "Hourglass Diamond"
-}
-
--- cache waktu terakhir favorit biar tidak spam
-local lastFavorite = {}
-
-local function autoFavoriteArtifacts()
-    local items = Data.Data["Inventory"]["Items"]
-    for _, itemData in pairs(items) do
-        local id = tonumber(itemData.Id or itemData.id)
-        local uuid = tostring(itemData.UUID or itemData.uuid)
-        local favorited = itemData.Favorited or itemData.favorited
-
-        if id and targetIDs[id] and uuid then
-            -- kalau user un-favorite manual, reset cache agar bisa difavorite lagi
-            if favorited == false and lastFavorite[uuid] then
-                lastFavorite[uuid] = nil
-            end
-
-            -- hanya kirim kalau belum favorit dan belum dikirim dalam 2 detik terakhir
-            if not favorited then
-                local last = lastFavorite[uuid] or 0
-                if tick() - last > 0.1 then
-                    print(string.format("⭐ Re-favoriting %s Artifact (ID %d, UUID %s)",
-                        targetIDs[id], id, uuid))
-                    RemoteFavorite:FireServer(uuid)
-                    lastFavorite[uuid] = tick()
-                end
-            end
-        end
-    end
-end
-
--- =========================================================
--- TOGGLE
-QuestTab:CreateToggle({
-    Name = "Auto Favorite Artifacts",
-    CurrentValue = false,
-    Flag = "AutoFavoriteArtifacts",
-    Callback = function(Value)
-        _G.AutoFavoriteArtifacts = Value
-        if not Value then
-            print("[Artifacts] Auto Favorite disabled.")
-            lastFavorite = {}
-            return
-        end
-
-        task.spawn(function()
-            print("[Artifacts] Auto Favorite enabled (real-time mode).")
-            while _G.AutoFavoriteArtifacts do
-                pcall(autoFavoriteArtifacts)
-                task.wait(0.1)
-            end
-        end)
-    end
-})
-
 -- =========================================================
 -- Quest Info
 
@@ -2463,11 +2785,13 @@ local RF = game:GetService("ReplicatedStorage")
 
 -- Mapping nama item -> ID server
 local ItemPurchaseIds = {
-    ["Luck Totem 2M Coins"]       = 5,
-    ["Royal Bait 425K Coins"]     = 4,
-    ["Singularity Bait 8.2M Coins"] = 3,
-    ["Hazmat Rod 1.38M Coins"]    = 2,
-    ["Fluorescent Rod 685K Coins"]= 1,
+    ["Mutation Totem"]      = 8,
+    ["Shiny Totem"]         = 7,
+    ["Luck Totem"]          = 5,
+    ["Royal Bait"]          = 4,
+    ["Singularity Bait"]    = 3,
+    ["Hazmat Rod"]          = 2,
+    ["Fluorescent Rod"]     = 1,
 }
 
 local selectedId = nil
@@ -2476,11 +2800,13 @@ local selectedId = nil
 ShopTab:CreateDropdown({
     Name = "Select Merchant Item",
     Options = {
-        "Luck Totem 2M Coins",
-        "Royal Bait 425K Coins",
-        "Singularity Bait 8.2M Coins",
-        "Hazmat Rod 1.38M Coins",
-        "Fluorescent Rod 685K Coins"
+        "Luck Totem",
+        "Shiny Totem",
+        "Mutation Totem",
+        "Royal Bait ",
+        "Singularity Bait",
+        "Hazmat Rod",
+        "Fluorescent Rod",
     },
     CurrentOption = { "Select item" },
     MultipleOptions = false,
@@ -3077,7 +3403,7 @@ TeleportTab:CreateButton({
         end
     end,
 })
-
+--[[
 local Section = TeleportTab:CreateSection("Teleport to Machines")
 
 --// Data Lokasi Mesin
@@ -3153,7 +3479,7 @@ local Button = TeleportTab:CreateButton({
         end
     end,
 })
-
+]]
 -- =========================================================
 -- Config
 task.defer(function()
