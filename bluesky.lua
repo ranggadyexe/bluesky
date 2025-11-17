@@ -371,7 +371,7 @@ FishingTab:CreateButton({
 })
 
 
--- ===== Anti Stuck DEBUG (toggle + paragraph + timer + reset after 15s) =====
+-- ===== Anti Stuck DEBUG (toggle + paragraph + timer + reset after 30s) =====
 local antiTimerEnabled = false
 local antiTimer = 0
 
@@ -397,7 +397,7 @@ end)
 
 -- Toggle
 FishingTab:CreateToggle({
-    Name = "Anti Stuck (will reset fishing if 15s not caught fish)",
+    Name = "Anti Stuck (will reset fishing if 30s not caught fish)",
     CurrentValue = false,
     Flag = "AntiStuckDebug",
     Callback = function(state)
@@ -422,7 +422,7 @@ task.spawn(function()
                 Content = string.format("Status: ON | Timer: %d s", antiTimer),
             })
 
-            if antiTimer >= 15 then
+            if antiTimer >= 30 then
                 ResetFishing()
                 antiTimer = 0
             end
