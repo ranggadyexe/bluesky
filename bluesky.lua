@@ -76,7 +76,7 @@ local FishingController     = require(ReplicatedStorage.Controllers:WaitForChild
 
 
 -- Tuning
-local CLICK_PERIOD  = 0.105  -- > 0.1 s (rate limit di FishingMinigameClick)
+local CLICK_PERIOD  = 0.1  -- > 0.1 s (rate limit di FishingMinigameClick)
 local RECAST_DELAY  = 0.2    -- jeda kecil setelah sesi berakhir sebelum recast
 local USE_HALF_PWR  = true   -- arg3=true => power 0.5 (sesuai decompile, stabil)
 local WATCHDOG_IDLE = 0.5    -- idle tanpa sesi > 0.5s -> paksa cast lagi
@@ -110,15 +110,49 @@ local function castOnce()
     end
 end
 
+-- ambil referensi bar minigame dari GUI
+local FishingGui = LocalPlayer.PlayerGui:WaitForChild("Fishing")
+local MiniGameDisplay = FishingGui.Main.Display
+local LeftBar = MiniGameDisplay.CanvasGroup.Left.Bar
+
 local function finishMinigame()
     if clicking then return end
     clicking = true
+
     while active do
         local ok, guid = pcall(function() return FishingController:GetCurrentGUID() end)
         if (not ok) or (not guid) then break end
-        pcall(function() FishingController:RequestFishingMinigameClick() end)
+
+        -- cek skala bar (0 - 1)
+        local barScale = 0
+        pcall(function()
+            barScale = LeftBar.Size.X.Scale
+        end)
+
+        if barScale >= 0.98 then
+            -- bar sudah kelihatan penuh di client
+            -- kasih 1 klik ekstra & paksa remote FishingCompleted
+            pcall(function()
+                FishingController:RequestFishingMinigameClick()
+            end)
+
+            task.wait(0.15) -- kasih waktu dikit
+
+            pcall(function()
+                FishingCompleteRemote:FireServer()
+            end)
+
+            break
+        else
+            -- lanjut klik normal
+            pcall(function()
+                FishingController:RequestFishingMinigameClick()
+            end)
+        end
+
         task.wait(CLICK_PERIOD)
     end
+
     clicking = false
 end
 
@@ -456,6 +490,7 @@ FishingTab:CreateToggle({
     end
 })
 
+--[[
 -- ================== UI: Instant Auto Fishing ==================
 -- default delay (detik) setelah tanda "!" sebelum kirim FishingCompleted
 
@@ -609,6 +644,7 @@ FishingTab:CreateToggle({
         if v then startMute() else stopMute() end
     end
 })
+]]
 
 -- =========================================================
 -- 🎁 Auto Claim Event Rewards (Loop Every 60 Minutes)
