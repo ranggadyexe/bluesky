@@ -278,31 +278,6 @@ local function ResetFishing()
     end
 end
 
-local function DisableAllFishingAnimations()
-    local animationsFolder = game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Animations")
-
-    for _, anim in ipairs(animationsFolder:GetChildren()) do
-        if anim:IsA("Animation") then
-            anim.AnimationId = "" -- hapus ID supaya tidak bisa diputar
-        end
-    end
-
-    -- Pastikan AnimationController tidak bisa play ulang
-    local success, controller = pcall(function()
-        return require(game:GetService("ReplicatedStorage").Controllers.AnimationController)
-    end)
-    if success and controller then
-        pcall(function()
-            controller:DestroyActiveAnimationTracks() -- stop semua yg sedang jalan
-        end)
-        -- Opsional: override PlayAnimation agar tidak berfungsi
-        controller.PlayAnimation = function() end
-        controller.StopAnimation = function() end
-    end
-
-    warn("[🛑] Semua animasi mancing berhasil dinonaktifkan!")
-end
-
 local function waitForCharacter()
     local plr = game.Players.LocalPlayer
     local char = plr.Character or plr.CharacterAdded:Wait()
@@ -1132,7 +1107,6 @@ MainTab:CreateToggle({
                     simplifyPart(obj)
                 end)
             end
-            DisableAllFishingAnimations()
         else
         end
     end,
