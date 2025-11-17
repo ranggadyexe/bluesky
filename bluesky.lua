@@ -118,41 +118,12 @@ local LeftBar = MiniGameDisplay.CanvasGroup.Left.Bar
 local function finishMinigame()
     if clicking then return end
     clicking = true
-
     while active do
         local ok, guid = pcall(function() return FishingController:GetCurrentGUID() end)
         if (not ok) or (not guid) then break end
-
-        -- cek skala bar (0 - 1)
-        local barScale = 0
-        pcall(function()
-            barScale = LeftBar.Size.X.Scale
-        end)
-
-        if barScale >= 0.98 then
-            -- bar sudah kelihatan penuh di client
-            -- kasih 1 klik ekstra & paksa remote FishingCompleted
-            pcall(function()
-                FishingController:RequestFishingMinigameClick()
-            end)
-
-            task.wait(0.15) -- kasih waktu dikit
-
-            pcall(function()
-                FishingCompleteRemote:FireServer()
-            end)
-
-            break
-        else
-            -- lanjut klik normal
-            pcall(function()
-                FishingController:RequestFishingMinigameClick()
-            end)
-        end
-
+        pcall(function() FishingController:RequestFishingMinigameClick() end)
         task.wait(CLICK_PERIOD)
     end
-
     clicking = false
 end
 
@@ -910,12 +881,12 @@ MainTab:CreateButton({
 })
 
 local autoSellThread = nil
-local autoSellDelay = 3 -- default 3 seconds
+local autoSellDelay = 30 -- default 3 seconds
 
 -- // TextBox to change delay
 MainTab:CreateInput({
     Name = "Auto Sell Delay (seconds)",
-    PlaceholderText = "Enter seconds (default 3s)",
+    PlaceholderText = "Enter seconds (default 30s)",
     RemoveTextAfterFocusLost = false,
     Callback = function(Text)
         local num = tonumber(Text)
@@ -925,7 +896,7 @@ MainTab:CreateInput({
     end,
 })
 
--- // Toggle Auto Sell
+--- // Toggle Auto Sell
 MainTab:CreateToggle({
     Name = "Auto Sell Loop",
     CurrentValue = false,
@@ -944,14 +915,16 @@ MainTab:CreateToggle({
 
         -- ✅ Start the loop
         autoSellThread = task.spawn(function()
-
             local SellAll = netRoot:WaitForChild("RF/SellAllItems")
 
             while _G.AutoSell do
+                -- ⏱ tunggu dulu baru sell
+                task.wait(autoSellDelay)
+                if not _G.AutoSell then break end
+
                 pcall(function()
                     SellAll:InvokeServer()
                 end)
-                task.wait(autoSellDelay)
             end
         end)
     end,
