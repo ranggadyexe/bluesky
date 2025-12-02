@@ -753,6 +753,51 @@ FavoritTab:CreateButton({
 })
 
 -- =========================================================
+-- 🎯 Config: 4 Ikan Khusus
+-- =========================================================
+local SpecialFishIds = {
+    [263] = false, --crocodile
+    [283] = true, --laba laba
+    [284] = false,
+    [270] = false,
+    [382] = true, --cute octopus
+}
+
+local autoFavSpecialEnabled = false
+
+task.spawn(function()
+    while true do
+        if autoFavSpecialEnabled then
+            local items = Data.Data.Inventory.Items
+            
+            for _, info in pairs(items) do
+                if typeof(info) == "table" and info.Id and not info.Favorited then
+                    local ok, meta = pcall(function()
+                        return ItemUtility.GetItemDataFromItemType("Fish", info.Id)
+                    end)
+
+                    if ok and meta and SpecialFishIds[meta.Data.Id] then
+                        RemoteFavorite:FireServer(info.UUID)
+                        print("⭐ Auto-Favorited Special:", meta.Data.Name)
+                        task.wait(0.1)
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+AutoTab:CreateToggle({
+    Name = "Auto Favorite Laba Laba & Cute Octopus",
+    Flag = "AutoFav4SpecialFish",
+    CurrentValue = false,
+    Callback = function(v)
+        autoFavSpecialEnabled = v
+    end,
+})
+
+-- =========================================================
 -- Anti AFK
 
 local Section = UtilityTab:CreateSection("ANTI AFK")
