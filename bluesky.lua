@@ -1893,10 +1893,11 @@ AutoTab:CreateButton({
 -- 🎯 Config: 4 Ikan Khusus
 -- =========================================================
 local SpecialFishIds = {
-    [263] = false,
-    [283] = true,
+    [263] = false, --crocodile
+    [283] = true, --laba laba
     [284] = false,
     [270] = false,
+    [382] = true, --cute octopus
 }
 
 local autoFavSpecialEnabled = false
@@ -1925,7 +1926,7 @@ task.spawn(function()
 end)
 
 AutoTab:CreateToggle({
-    Name = "Auto Favorite 4 Fish Ancient Ruin",
+    Name = "Auto Favorite Laba Laba & Cute Octopus",
     Flag = "AutoFav4SpecialFish",
     CurrentValue = false,
     Callback = function(v)
@@ -3277,6 +3278,13 @@ if not enchantLocation then
     return
 end
 
+--// Referensi ke lokasi EnchantLocation
+local secondEnchant = workspace:WaitForChild("! SECOND ENCHANTING ALTAR !"):WaitForChild("EnchantLocation")
+if not secondEnchant then
+    warn("EnchantLocation not found in workspace['! SECOND ENCHANTING ALTAR !']")
+    return
+end
+
 --// Buat Button untuk teleportasi
 local Button = TeleportTab:CreateButton({
     Name = "Teleport to Enchant Altar",
@@ -3287,6 +3295,46 @@ local Button = TeleportTab:CreateButton({
                 if character and character:FindFirstChild("HumanoidRootPart") then
                     local rootPart = character.HumanoidRootPart
                     rootPart.CFrame = CFrame.new(enchantLocation.Position, enchantLocation.Position + rootPart.CFrame.LookVector) -- Gunakan arah hadap saat ini
+                else
+                    error("Character or HumanoidRootPart not found")
+                end
+            end)
+            if success then
+                Rayfield:Notify({
+                    Title = "Teleport Result",
+                    Content = "Teleported to Enchanting Altar successfully!",
+                    Image = "map-pin",
+                    Duration = 3,
+                })
+            else
+                Rayfield:Notify({
+                    Title = "Teleport Failed",
+                    Content = "Error: " .. tostring(response),
+                    Image = "map-pin",
+                    Duration = 3,
+                })
+            end
+        else
+            Rayfield:Notify({
+                Title = "Error",
+                Content = "Location not found: Enchanting Altar",
+                Image = "map-pin",
+                Duration = 3,
+            })
+        end
+    end,
+})
+
+--// Buat Button untuk teleportasi
+local Button = TeleportTab:CreateButton({
+    Name = "Teleport to Second Enchant Altar",
+    Callback = function()
+        if secondEnchant then
+            local success, response = pcall(function()
+                local character = LocalPlayer.Character
+                if character and character:FindFirstChild("HumanoidRootPart") then
+                    local rootPart = character.HumanoidRootPart
+                    rootPart.CFrame = CFrame.new(secondEnchant.Position, secondEnchant.Position + rootPart.CFrame.LookVector) -- Gunakan arah hadap saat ini
                 else
                     error("Character or HumanoidRootPart not found")
                 end
