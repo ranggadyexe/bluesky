@@ -2483,7 +2483,7 @@ QuestTab:CreateToggle({
 })
 
 -- =========================================================
--- Quest Info
+-- Quest Info (Deep Sea) - GUI + Data Redeemed
 
 local Section = QuestTab:CreateSection("Deep Sea Quest")
 
@@ -2492,50 +2492,74 @@ local QuestInfo = QuestTab:CreateParagraph({
     Content = "Loading quest info..."
 })
 
--- References
+-- References (GUI)
 local QuestFolder = workspace["!!! MENU RINGS"]["QuestTrackers"]["Deep Sea Tracker"].Board.Gui.Content
 local Header = QuestFolder.Header
 local Label1 = QuestFolder.Label1
 local Label2 = QuestFolder.Label2
 local Label3 = QuestFolder.Label3
 local Label4 = QuestFolder.Label4
-local Progress = QuestFolder.Progress.ProgressLabel
+local ProgressLabel = QuestFolder.Progress.ProgressLabel
+
+-- Helper: cari table Quests di Data.Data.DeepSea (fleksibel)
+local function getDeepSeaQuests()
+    local DS = Data and Data.Data and Data.Data.DeepSea
+    if not DS then return nil end
+
+    -- coba beberapa path yang paling umum
+    local candidates = {
+        DS.Available and DS.Available.Forever and DS.Available.Forever.Quests,
+        DS.Available and DS.Available.Daily and DS.Available.Daily.Quests,
+        DS.Available and DS.Available.Weekly and DS.Available.Weekly.Quests,
+        DS.Quests,
+    }
+
+    for _, q in ipairs(candidates) do
+        if q ~= nil then
+            return q
+        end
+    end
+
+    return nil
+end
+
+local function redeemedText(Q, i)
+    if not Q then return "..." end
+    local q = Q[i] or Q[tostring(i)]
+    local r = q and q.Redeemed
+    if r == nil then return "..." end
+    return tostring(r):upper() -- TRUE / FALSE
+end
 
 -- Auto update loop
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
+            local Q = getDeepSeaQuests()
+
             QuestInfo:Set({
                 Title = Header.Text,
-                Content = string.format([[ 
-%s
-%s
-%s
-%s
+                Content = string.format([[
+%s = %s
+%s = %s
+%s = %s
+%s = %s
 
 %s
                 ]],
-                Label1.Text,
-                Label2.Text,
-                Label3.Text,
-                Label4.Text,
-                Progress.Text
+                Label1.Text, redeemedText(Q, 1),
+                Label2.Text, redeemedText(Q, 2),
+                Label3.Text, redeemedText(Q, 3),
+                Label4.Text, redeemedText(Q, 4),
+                ProgressLabel.Text
             )})
         end)
     end
 end)
 
 -- =========================================================
--- Auto Quest Deep Sea
+-- Auto Quest Deep Sea (Redeemed-based)
 
--- safe percent parsing helper
-local function parsePercentFromText(txt)
-    if not txt then return 0 end
-    local num = txt:match("([%d%.]+)%%")
-    return tonumber(num) or 0
-end
-
--- coordinates
 local bestSpotTreasure = CFrame.lookAt(
     Vector3.new(-3563.683349609375, -279.07421875, -1679.2740478515625),
     Vector3.new(-3563.683349609375, -279.07421875, -1679.2740478515625) + Vector3.new(-0.6082443, 0, 0.7937499)
@@ -2546,13 +2570,20 @@ local bestSpotSysyphus = CFrame.lookAt(
     Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, 0, 0.720)
 )
 
--- Auto Quest toggle
+local function isDeepSeaRedeemed(i)
+    local Q = getDeepSeaQuests()
+    if not Q then return nil end
+    local q = Q[i] or Q[tostring(i)]
+    if not q or q.Redeemed == nil then return nil end
+    return q.Redeemed == true
+end
+
 QuestTab:CreateToggle({
     Name = "⚡ Auto Quest (Deep Sea)",
     CurrentValue = false,
     Flag = "AutoQuestDeepSea",
     Callback = function(Value)
-        _G.AutoQuest = Value
+        _G.AutoQuestDeepSea = Value
 
         if not Value then
             if Rayfield.Flags["AutoFishing"].CurrentValue then
@@ -2560,46 +2591,53 @@ QuestTab:CreateToggle({
             end
             return
         end
-        
+
         task.spawn(function()
             local currentStep = 0
-            while _G.AutoQuest do
-                local p1 = parsePercentFromText(Label1.Text)
-                local p2 = parsePercentFromText(Label2.Text)
-                local p3 = parsePercentFromText(Label3.Text)
 
-                if p1 < 100 then
-                    if currentStep ~= 1 then
-                        currentStep = 1
-                        goToSpot(bestSpotTreasure)
-                    end
+            while _G.AutoQuestDeepSea do
+                local r1 = isDeepSeaRedeemed(1)
+                local r2 = isDeepSeaRedeemed(2)
+                local r3 = isDeepSeaRedeemed(3)
+                local r4 = isDeepSeaRedeemed(4)
 
-                elseif p2 < 100 then
-                    if currentStep ~= 2 then
-                        currentStep = 2
-                        goToSpot(bestSpotSysyphus)
-                    end
-
-                elseif p3 < 100 then
-                    if currentStep ~= 3 then
-                        currentStep = 3
-                        goToSpot(bestSpotSysyphus)
-                    end
-
+                -- data belum ready
+                if r1 == nil or r2 == nil or r3 == nil or r4 == nil then
+                    task.wait(1)
                 else
-                    if currentStep ~= 4 then
-                        currentStep = 4
-                        goToSpot(bestSpotSysyphus)
-                    end
-                end
+                    -- sama seperti logic lama p1/p2/p3 < 100,
+                    -- tapi sekarang: kalau belum redeemed berarti belum selesai
+                    if not r1 then
+                        if currentStep ~= 1 then
+                            currentStep = 1
+                            goToSpot(bestSpotTreasure)
+                        end
 
-                task.wait(5)
+                    elseif not r2 then
+                        if currentStep ~= 2 then
+                            currentStep = 2
+                            goToSpot(bestSpotSysyphus)
+                        end
+
+                    elseif not r3 then
+                        if currentStep ~= 3 then
+                            currentStep = 3
+                            goToSpot(bestSpotSysyphus)
+                        end
+
+                    else
+                        if currentStep ~= 4 then
+                            currentStep = 4
+                            goToSpot(bestSpotSysyphus)
+                        end
+                    end
+
+                    task.wait(5)
+                end
             end
         end)
     end
 })
-
-
 
 -- =========================================================
 -- SHOP
