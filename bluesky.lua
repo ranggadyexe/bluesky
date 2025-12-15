@@ -2085,7 +2085,7 @@ local QuestInfoElement = QuestTab:CreateParagraph({
 })
 
 -- References
-local QuestFolder = workspace["!!! MENU RINGS"]["Element Tracker"].Board.Gui.Content
+local QuestFolder = workspace["!!! MENU RINGS"]["QuestTrackers"]["Element Tracker"].Board.Gui.Content
 local Header = QuestFolder.Header
 local Label1 = QuestFolder.Label1
 local Label2 = QuestFolder.Label2
@@ -2463,7 +2463,7 @@ local QuestInfo = QuestTab:CreateParagraph({
 })
 
 -- References
-local QuestFolder = workspace["!!! MENU RINGS"]["Deep Sea Tracker"].Board.Gui.Content
+local QuestFolder = workspace["!!! MENU RINGS"]["QuestTrackers"]["Deep Sea Tracker"].Board.Gui.Content
 local Header = QuestFolder.Header
 local Label1 = QuestFolder.Label1
 local Label2 = QuestFolder.Label2

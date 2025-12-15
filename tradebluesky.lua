@@ -788,7 +788,7 @@ task.spawn(function()
     end
 end)
 
-AutoTab:CreateToggle({
+FavoritTab:CreateToggle({
     Name = "Auto Favorite Laba Laba & Cute Octopus",
     Flag = "AutoFav4SpecialFish",
     CurrentValue = false,
