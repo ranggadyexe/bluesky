@@ -657,26 +657,34 @@ local Section = MainTab:CreateSection("Farming FISH")
 
 local player = game.Players.LocalPlayer
 
---// 🎯 Fokus hanya ke Megalodon Hunt
+--// 🎯 Fokus hanya ke Megalodon Hunt (lokasi baru: workspace.Props["Megalodon Hunt"])
 local function getMegalodonProp()
-    local menuRings = workspace:FindFirstChild("!!! MENU RINGS")
-    if not menuRings then 
-        warn("[MegalodonFinder] !!! MENU RINGS tidak ditemukan")
-        return nil 
+    local props = workspace:FindFirstChild("Props")
+    if not props then
+        warn("[MegalodonFinder] Folder Props tidak ditemukan")
+        return nil
     end
 
-    -- Cek semua descendant di dalam "!!! MENU RINGS"
-    for _, descendant in ipairs(menuRings:GetDescendants()) do
-        if descendant.Name == "Megalodon Hunt" then
-            local part = descendant:FindFirstChildWhichIsA("BasePart", true)
-            if part then
-                print("[MegalodonFinder] Ditemukan Megalodon Hunt di:", descendant:GetFullName())
-                return part.CFrame
-            end
-        end
+    local megalodon = props:FindFirstChild("Black Hole")
+    if not megalodon then
+        warn("[MegalodonFinder] Props['Megalodon Hunt'] tidak ditemukan")
+        return nil
     end
 
-    warn("[MegalodonFinder] Tidak menemukan Megalodon Hunt di dalam MENU RINGS")
+    -- Kalau object-nya part langsung
+    if megalodon:IsA("BasePart") then
+        print("[MegalodonFinder] Ditemukan Megalodon Hunt di:", megalodon:GetFullName())
+        return megalodon.CFrame
+    end
+
+    -- Kalau dia Model/Folder, cari part di dalamnya
+    local part = megalodon:FindFirstChildWhichIsA("BasePart", true)
+    if part then
+        print("[MegalodonFinder] Ditemukan Megalodon Hunt di:", megalodon:GetFullName())
+        return part.CFrame
+    end
+
+    warn("[MegalodonFinder] Megalodon Hunt ada tapi tidak punya BasePart")
     return nil
 end
 
@@ -2085,7 +2093,7 @@ local QuestInfoElement = QuestTab:CreateParagraph({
 })
 
 -- References (GUI)
-local QuestFolder = workspace["!!! MENU RINGS"]["QuestTrackers"]["Element Tracker"].Board.Gui.Content
+local QuestFolder = workspace["!!! DEPENDENCIES"]["QuestTrackers"]["Element Tracker"].Board.Gui.Content
 local Header   = QuestFolder.Header
 local Label1   = QuestFolder.Label1
 local Label2   = QuestFolder.Label2
@@ -2110,10 +2118,11 @@ local function redeemedText(Q, i)
 end
 
 task.spawn(function()
-    while task.wait(1) do
+    while true do
+        if not QuestInfoElement then break end
+
         pcall(function()
             local Q = getQuests()
-
             QuestInfoElement:Set({
                 Title = Header.Text,
                 Content = string.format([[
@@ -2129,12 +2138,13 @@ task.spawn(function()
                 Label3.Text, redeemedText(Q, 3),
                 Label4.Text, redeemedText(Q, 4),
                 ProgressLabel.Text
-            )
+                )
             })
         end)
+
+        RunService.task.wait(0.1) -- update setiap frame (paling realtime)
     end
 end)
-
 -- =========================================================
 -- Auto Quest Element
 
@@ -2160,12 +2170,11 @@ local function isRedeemed(i)
     return q.Redeemed == true
 end
 
-local function waitUntilRedeemed(i, interval)
-    interval = interval or 5
+local function waitUntilRedeemed(i)
     while _G.AutoQuestElement do
         local r = isRedeemed(i)
         if r == true then return true end
-        task.wait(interval)
+        task.wait(0.1) -- realtime-ish
     end
     return false
 end
@@ -2493,7 +2502,7 @@ local QuestInfo = QuestTab:CreateParagraph({
 })
 
 -- References (GUI)
-local QuestFolder = workspace["!!! MENU RINGS"]["QuestTrackers"]["Deep Sea Tracker"].Board.Gui.Content
+local QuestFolder = workspace["!!! DEPENDENCIES"]["QuestTrackers"]["Deep Sea Tracker"].Board.Gui.Content
 local Header = QuestFolder.Header
 local Label1 = QuestFolder.Label1
 local Label2 = QuestFolder.Label2
@@ -2531,9 +2540,8 @@ local function redeemedText(Q, i)
     return tostring(r):upper() -- TRUE / FALSE
 end
 
--- Auto update loop
 task.spawn(function()
-    while task.wait(1) do
+    while true do
         pcall(function()
             local Q = getDeepSeaQuests()
 
@@ -2552,8 +2560,11 @@ task.spawn(function()
                 Label3.Text, redeemedText(Q, 3),
                 Label4.Text, redeemedText(Q, 4),
                 ProgressLabel.Text
-            )})
+                )
+            })
         end)
+
+        RunService.task.wait(0.1)
     end
 end)
 
@@ -2569,6 +2580,15 @@ local bestSpotSysyphus = CFrame.lookAt(
     Vector3.new(-3764.026, -135.074, -994.416),
     Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, 0, 0.720)
 )
+
+local function waitUntilDeepSeaRedeemed(i)
+    while _G.AutoQuestDeepSea do
+        local r = isDeepSeaRedeemed(i)
+        if r == true then return true end
+        task.wait(0.1) -- realtime-ish
+    end
+    return false
+end
 
 local function isDeepSeaRedeemed(i)
     local Q = getDeepSeaQuests()
