@@ -7,6 +7,7 @@ local LocalPlayer = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Client = require(ReplicatedStorage.Packages.Replion).Client
 local Data = Client:WaitReplion("Data")
+local QuestsDef = require(ReplicatedStorage.Modules.Quests)
 local ItemUtility = require(ReplicatedStorage.Shared.ItemUtility)
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -356,6 +357,16 @@ local spotCrater = CFrame.lookAt(
     Vector3.new(1044.144775390625, 2.2233667373657227, 5020.09619140625),
     Vector3.new(1044.144775390625, 2.2233667373657227, 5020.09619140625)
         + Vector3.new(-0.5718123912811279, 3.73610191672924e-08, 0.8203843832015991)
+)
+
+local bestSpotTreasure = CFrame.lookAt(
+    Vector3.new(-3563.683349609375, -279.07421875, -1679.2740478515625),
+    Vector3.new(-3563.683349609375, -279.07421875, -1679.2740478515625) + Vector3.new(-0.6082443, 0, 0.7937499)
+)
+
+local bestSpotSysyphus = CFrame.lookAt(
+    Vector3.new(-3764.026, -135.074, -994.416),
+    Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, 0, 0.720)
 )
 
 
@@ -2080,303 +2091,307 @@ AutoTab:CreateToggle({
 -- =========================================================
 -- Element Quest (GUI Labels + Redeemed TRUE/FALSE)
 
+-- =========================================================
+-- CONFIG (Pastikan flag ini memang ada di UI Rayfield kamu)
+local FLAG_AUTOFISHING      = "AutoFishing"
+local FLAG_AUTOQUEST        = "AutoQuest"           -- (kalau masih dipakai quest lain)
+local FLAG_AUTOQUEST_ART    = "AutoQuestArtifact"
+local FLAG_AUTOQUEST_DEEP   = "AutoQuestDeepSea"
+local FLAG_AUTOQUEST_ELEM   = "AutoQuestElement"
+local FLAG_MEGALODON_HUNT   = "MegalodonHunt"
+
+local plr = Players.LocalPlayer
+
 local Section = QuestTab:CreateSection("Element Quest")
 
+-- =========================================================
+-- Helper: Quest progress via Replion Data.Quests + Modules.Quests (Goal)
+local function isObjectiveDone(questType, questId, i)
+	local state = Data:Get({"Quests", questType, questId})
+	local def = QuestsDef[questType] and QuestsDef[questType][questId]
+	if not state or not def then return nil end
+
+	local st = state.Objectives and state.Objectives[i]
+	local od = def.Objectives and def.Objectives[i]
+	if not st or not od then return nil end
+
+	local progress = tonumber(st.Progress) or 0
+	local goal = tonumber(od.Goal) or 0
+	return progress >= goal
+end
+
+local function isQuestDone(questType, questId)
+	local def = QuestsDef[questType] and QuestsDef[questType][questId]
+	local state = Data:Get({"Quests", questType, questId})
+	if not def or not state or not state.Objectives then return nil end
+
+	for i, od in ipairs(def.Objectives or {}) do
+		local st = state.Objectives[i]
+		local progress = st and tonumber(st.Progress) or 0
+		local goal = tonumber(od.Goal) or 0
+		if progress < goal then
+			return false
+		end
+	end
+	return true
+end
+
+-- =========================================================
+-- Helper: Temple door lock check
+local function isTempleLocked()
+	local jungle = workspace:FindFirstChild("JUNGLE INTERACTIONS")
+	local doors = jungle and jungle:FindFirstChild("Doors")
+	local door = doors and doors:FindFirstChild("TempleDoor")
+	return (door and door:FindFirstChild("DELETE_ME_AFTER_UNLOCK")) ~= nil
+end
+
+-- =========================================================
+-- Tracker Paragraph (mirip UI)
+-- NOTE: butuh QuestTab & Rayfield sudah dibuat sebelumnya
+local Section = QuestTab:CreateSection("Element Quest (Mainline)")
+
 local QuestInfoElement = QuestTab:CreateParagraph({
-    Title = "Element Quest",
-    Content = "Loading..."
+	Title = "Element Quest",
+	Content = "Loading..."
 })
 
--- References (GUI)
-local QuestFolder = workspace["!!! DEPENDENCIES"]["QuestTrackers"]["Element Tracker"].Board.Gui.Content
-local Header   = QuestFolder.Header
-local Label1   = QuestFolder.Label1
-local Label2   = QuestFolder.Label2
-local Label3   = QuestFolder.Label3
-local Label4   = QuestFolder.Label4
-local ProgressLabel = QuestFolder.Progress.ProgressLabel
+local ELEM_TYPE = "Mainline"
+local ELEM_ID   = "Element Quest"
+local ELEM_PATH = {"Quests", ELEM_TYPE, ELEM_ID}
 
--- Data path: ElementJungle.Available.Forever.Quests
-local function getQuests()
-    local EJ = Data and Data.Data and Data.Data.ElementJungle
-    local A = EJ and EJ.Available
-    local F = A and A.Forever
-    return F and F.Quests
+local function formatQuestText(questType, questId, state)
+	local def = QuestsDef[questType] and QuestsDef[questType][questId]
+	if not def then
+		return ("[Quest] Def missing: %s / %s"):format(questType, questId)
+	end
+	if not state or not state.Objectives then
+		return ("=== %s / %s ===\n(Quest belum aktif / data belum ready)"):format(questType, questId)
+	end
+
+	local lines = {}
+	table.insert(lines, ("=== %s / %s ==="):format(questType, questId))
+
+	for i, objDef in ipairs(def.Objectives or {}) do
+		local st = state.Objectives[i] or {}
+		local progress = tonumber(st.Progress) or 0
+		local goal = tonumber(objDef.Goal) or 0
+		local done = (goal > 0) and (progress >= goal) or false
+		local text = objDef.Name or objDef.Title or objDef.DisplayName or objDef.Type or ("Objective " .. i)
+		table.insert(lines, ("[%s] #%d %s (%d/%d)"):format(done and "✓" or " ", i, tostring(text), progress, goal))
+	end
+
+	return table.concat(lines, "\n")
 end
 
-local function redeemedText(Q, i)
-    if not Q then return "..." end
-    local q = Q[i] or Q[tostring(i)]
-    local r = q and q.Redeemed
-    if r == nil then return "..." end
-    return tostring(r):upper() -- TRUE / FALSE
-end
-
+-- initial update
 task.spawn(function()
-    while true do
-        if not QuestInfoElement then break end
-
-        pcall(function()
-            local Q = getQuests()
-            QuestInfoElement:Set({
-                Title = Header.Text,
-                Content = string.format([[
-%s = %s
-%s = %s
-%s = %s
-%s = %s
-
-%s
-                ]],
-                Label1.Text, redeemedText(Q, 1),
-                Label2.Text, redeemedText(Q, 2),
-                Label3.Text, redeemedText(Q, 3),
-                Label4.Text, redeemedText(Q, 4),
-                ProgressLabel.Text
-                )
-            })
-        end)
-
-        RunService.task.wait(0.1) -- update setiap frame (paling realtime)
-    end
+	local st = Data:Get(ELEM_PATH)
+	QuestInfoElement:Set({
+		Title = ELEM_ID,
+		Content = formatQuestText(ELEM_TYPE, ELEM_ID, st)
+	})
 end)
--- =========================================================
--- Auto Quest Element
 
--- ===== ElementJungle quests path (FIX)
-local function getElementQuests()
-    local EJ = Data and Data.Data and Data.Data.ElementJungle
-    local A  = EJ and EJ.Available
-    local F  = A and A.Forever
-    return F and F.Quests
-end
-
-local function getQuest(i)
-    local Q = getElementQuests()
-    if not Q then return nil end
-    return Q[i] or Q[tostring(i)]
-end
-
-local function isRedeemed(i)
-    local q = getQuest(i)
-    if not q or q.Redeemed == nil then
-        return nil -- data belum ready
-    end
-    return q.Redeemed == true
-end
-
-local function waitUntilRedeemed(i)
-    while _G.AutoQuestElement do
-        local r = isRedeemed(i)
-        if r == true then return true end
-        task.wait(0.1) -- realtime-ish
-    end
-    return false
-end
-
-local function hasGhostfinnRod()
-    local rods = Data.Data["Inventory"]["Fishing Rods"]
-    for _, r in pairs(rods) do
-        if tonumber(r.id) == 169 then return true end
-    end
-    return false
-end
-
-local function forceRejoin()
-    local ts = game:GetService("TeleportService")
-    local plr = game.Players.LocalPlayer
-    print("[Element Quest] Rejoining server...")
-    ts:Teleport(game.PlaceId, plr)
-end
-
--- Auto resume autofishing after respawn
-local plr = game.Players.LocalPlayer
-plr.CharacterAdded:Connect(function(newChar)
-    print("[System] ♻️ Character respawn detected.")
-    task.spawn(function()
-        local hrp = newChar:WaitForChild("HumanoidRootPart", 10)
-        if hrp then
-            task.wait(2)
-            if _G.AutoQuestElement then
-                Rayfield.Flags["AutoFishing"]:Set(true)
-                print("[System] ✅ AutoFishing resumed automatically after respawn.")
-            end
-        end
-    end)
+-- live update
+Data:OnChange(ELEM_PATH, function(newState)
+	if QuestInfoElement then
+		QuestInfoElement:Set({
+			Title = ELEM_ID,
+			Content = formatQuestText(ELEM_TYPE, ELEM_ID, newState)
+		})
+	end
 end)
 
 -- =========================================================
--- Main Toggle
+-- Auto resume autofishing after respawn (kalau AutoQuestElement ON)
+plr.CharacterAdded:Connect(function(char)
+	task.spawn(function()
+		local hrp = char:WaitForChild("HumanoidRootPart", 10)
+		if hrp and _G.AutoQuestElement then
+			task.wait(2)
+			if Rayfield.Flags[FLAG_AUTOFISHING] then
+				Rayfield.Flags[FLAG_AUTOFISHING]:Set(true)
+			end
+		end
+	end)
+end)
 
+-- =========================================================
+-- Core Logic: Element Quest Automation (FULL)
 QuestTab:CreateToggle({
-    Name = "⚡ Auto Quest (Element Quest)",
-    CurrentValue = false,
-    Flag = "AutoQuestElement",
-    Callback = function(v)
-        _G.AutoQuestElement = v
+	Name = "⚡ Auto Quest (Element Quest)",
+	CurrentValue = false,
+	Flag = FLAG_AUTOQUEST_ELEM,
+	Callback = function(v)
+		_G.AutoQuestElement = v
 
-        if not v then
-            if Rayfield.Flags["AutoFishing"].CurrentValue then
-                Rayfield.Flags["AutoFishing"]:Set(false)
-            end
-            return
-        end
+		-- stop behavior
+		if not v then
+			if Rayfield.Flags[FLAG_AUTOFISHING] and Rayfield.Flags[FLAG_AUTOFISHING].CurrentValue then
+				Rayfield.Flags[FLAG_AUTOFISHING]:Set(false)
+			end
+			return
+		end
 
-        task.spawn(function()
-            local step = 0
+		task.spawn(function()
+			local step = 0
 
-            while _G.AutoQuestElement do
-                local r1 = isRedeemed(1)
-                local r2 = isRedeemed(2)
-                local r3 = isRedeemed(3)
-                local r4 = isRedeemed(4)
+			while _G.AutoQuestElement do
+				-- Read objective done states
+				local o1 = isObjectiveDone(ELEM_TYPE, ELEM_ID, 1)
+				local o2 = isObjectiveDone(ELEM_TYPE, ELEM_ID, 2)
+				local o3 = isObjectiveDone(ELEM_TYPE, ELEM_ID, 3)
+				local o4 = isObjectiveDone(ELEM_TYPE, ELEM_ID, 4)
 
-                -- Data belum ready -> tunggu, lanjut loop
-                if r1 == nil or r2 == nil or r3 == nil or r4 == nil then
-                    task.wait(1)
-
-                else
-                    ---------------------------------------------------
-                    -- Quest 1
-                    if not r1 then
-                        if step ~= 1 then
-                            step = 1
-                            print("[Element Quest] Quest 1 — Ghostfinn Rod (Redeemed = FALSE)")
-                        end
-
-                        if hasGhostfinnRod() then
-                            print("[Element Quest] Rod found but quest not redeemed → rejoin.")
-                            forceRejoin()
-                            return
-                        else
-                            print("[Element Quest] Rod missing → start Deep Sea Quest.")
-                            if not _G.AutoQuest then
-                                Rayfield.Flags["AutoQuest"]:Set(true)
-                            end
-                        end
-
-                    ---------------------------------------------------
-                    -- Quest 2 — Artifact first, then Secret Fishing
-                    elseif not r2 then
-                        if step ~= 2 then
-                            step = 2
-                            print("[Element Quest] Quest 2 — Checking Temple Door and Artifact status before fishing...")
-
-                            local function isTempleLocked()
-                                local door = workspace:FindFirstChild("JUNGLE INTERACTIONS")
-                                    and workspace["JUNGLE INTERACTIONS"].Doors
-                                    and workspace["JUNGLE INTERACTIONS"].Doors:FindFirstChild("TempleDoor")
-                                if door and door:FindFirstChild("DELETE_ME_AFTER_UNLOCK") then
-                                    return true
-                                end
-                                return false
-                            end
-
-                            if isTempleLocked() then
-                                print("[Element Quest] 🚪 Temple Door locked — starting Artifact Quest first...")
-
-                                Rayfield.Flags["AutoQuestElement"]:Set(false)
-                                _G.AutoQuestElement = false
-
-                                Rayfield.Flags["AutoQuestArtifact"]:Set(true)
-                                _G.AutoQuestArtifact = true
-
-                                repeat task.wait(5) until not isTempleLocked()
-
-                                print("[Element Quest] 🔓 Temple Door unlocked — switching back to Element Quest.")
-
-                                Rayfield.Flags["AutoQuestArtifact"]:Set(false)
-                                _G.AutoQuestArtifact = false
-
-                                Rayfield.Flags["AutoQuestElement"]:Set(true)
-                                _G.AutoQuestElement = true
-
-                                return
-                            end
-
-                            print("[Element Quest] Quest 2 — Temple unlocked, fishing at Ancient Jungle...")
-                            goToSpot(spotAncientJungle)
-                            task.wait(3)
-                            Rayfield.Flags["AutoFishing"]:Set(true)
-                        end
-
-                        if waitUntilRedeemed(2, 5) then
-                            print("[Element Quest] ✅ Quest 2 redeemed! Proceeding to next quest...")
-                        end
-
-                    ---------------------------------------------------
-                    -- Quest 3 — Sacred Temple Fishing
-                    elseif not r3 then
-                        if step ~= 3 then
-                            step = 3
-                            print("[Element Quest] Quest 3 — Checking Temple Door status before fishing...")
-
-                            local function isTempleLocked()
-                                local door = workspace:FindFirstChild("JUNGLE INTERACTIONS")
-                                    and workspace["JUNGLE INTERACTIONS"].Doors
-                                    and workspace["JUNGLE INTERACTIONS"].Doors:FindFirstChild("TempleDoor")
-                                if door and door:FindFirstChild("DELETE_ME_AFTER_UNLOCK") then
-                                    return true
-                                end
-                                return false
-                            end
-
-                            if isTempleLocked() then
-                                print("[Element Quest] 🚪 Temple Door still locked — switching to Artifact Quest.")
-
-                                Rayfield.Flags["AutoQuestElement"]:Set(false)
-                                _G.AutoQuestElement = false
-
-                                Rayfield.Flags["AutoQuestArtifact"]:Set(true)
-                                _G.AutoQuestArtifact = true
-
-                                repeat task.wait(5) until not isTempleLocked()
-
-                                print("[Element Quest] 🔓 Temple Door unlocked — returning to Element Quest.")
-
-                                Rayfield.Flags["AutoQuestArtifact"]:Set(false)
-                                _G.AutoQuestArtifact = false
-
-                                Rayfield.Flags["AutoQuestElement"]:Set(true)
-                                _G.AutoQuestElement = true
-
-                                return
-                            end
-
-                            print("[Element Quest] Temple Door unlocked — fishing at Sacred Temple...")
-                            goToSpot(spotSacredTemple)
-                            task.wait(3)
-                            Rayfield.Flags["AutoFishing"]:Set(true)
-                        end
-
-                        if waitUntilRedeemed(3, 5) then
-                            print("[Element Quest] ✅ Quest 3 redeemed! You can continue to Quest 4.")
-                        end
-
-                    ---------------------------------------------------
-                    -- Quest 4 — Final behavior
-                    else
-                        if step ~= 4 then
-                            step = 4
-                            task.wait(3)
-                            Rayfield.Flags["MegalodonHunt"]:Set(true)
-                            Rayfield.Flags["AutoQuestElement"]:Set(false)
-                            _G.AutoQuestElement = false
-                            return
-                        end
+				-- Data belum ready
+				if o1 == nil or o2 == nil or o3 == nil or o4 == nil then
+					task.wait(1)
+				else
+					---------------------------------------------------
+					-- Quest 1 (NEW): kalau belum selesai -> Deep Sea Quest dulu
+					if not o1 then
+						if step ~= 1 then
+                        step = 1
+                        -- 🔔 Notify user
+                        Rayfield:Notify({
+                            Title = "Element Quest",
+                            Content = "You don't have Ghostfinn Rod.\nRunning Deep Sea Quest first.",
+                            Duration = 6
+                        })
                     end
-                end
 
-                ---------------------------------------------------
-                -- Safety: keep autofishing on while running
-                if _G.AutoQuestElement and not Rayfield.Flags["AutoFishing"].CurrentValue then
-                    Rayfield.Flags["AutoFishing"]:Set(true)
-                end
+                    -- ❌ OFF Element Quest
+                    if Rayfield.Flags[FLAG_AUTOQUEST_ELEM] and Rayfield.Flags[FLAG_AUTOQUEST_ELEM].CurrentValue then
+                        Rayfield.Flags[FLAG_AUTOQUEST_ELEM]:Set(false)
+                    end
+                    _G.AutoQuestElement = false
 
-                task.wait(2)
-            end
-        end)
-    end
+                    -- ✅ ON Deep Sea Quest
+                    if Rayfield.Flags[FLAG_AUTOQUEST_DEEP] and not Rayfield.Flags[FLAG_AUTOQUEST_DEEP].CurrentValue then
+                        Rayfield.Flags[FLAG_AUTOQUEST_DEEP]:Set(true)
+                    end
+                    _G.AutoQuestDeepSea = true
+
+                    -- ❌ Pastikan autofishing dimatikan (Deep Sea biasanya movement-based)
+                    if Rayfield.Flags[FLAG_AUTOFISHING] and Rayfield.Flags[FLAG_AUTOFISHING].CurrentValue then
+                        Rayfield.Flags[FLAG_AUTOFISHING]:Set(false)
+                    end
+
+                    return
+
+					---------------------------------------------------
+					-- Quest 2 — Ancient Jungle SECRET fish
+					elseif not o2 then
+						if step ~= 2 then
+							step = 2
+							print("[Element Quest] Obj#2 -> cek TempleDoor & fishing Ancient Jungle...")
+
+							if isTempleLocked() then
+								print("[Element Quest] TempleDoor LOCKED -> switch ke Artifact Quest dulu.")
+
+								-- stop element
+								if Rayfield.Flags[FLAG_AUTOQUEST_ELEM] then Rayfield.Flags[FLAG_AUTOQUEST_ELEM]:Set(false) end
+								_G.AutoQuestElement = false
+
+								-- start artifact
+								if Rayfield.Flags[FLAG_AUTOQUEST_ART] then Rayfield.Flags[FLAG_AUTOQUEST_ART]:Set(true) end
+								_G.AutoQuestArtifact = true
+
+								-- wait unlock
+								repeat task.wait(5) until not isTempleLocked()
+
+								print("[Element Quest] TempleDoor UNLOCKED -> balik ke Element Quest.")
+
+								-- stop artifact
+								if Rayfield.Flags[FLAG_AUTOQUEST_ART] then Rayfield.Flags[FLAG_AUTOQUEST_ART]:Set(false) end
+								_G.AutoQuestArtifact = false
+
+								-- resume element
+								if Rayfield.Flags[FLAG_AUTOQUEST_ELEM] then Rayfield.Flags[FLAG_AUTOQUEST_ELEM]:Set(true) end
+								_G.AutoQuestElement = true
+
+								return
+							end
+
+							-- Temple unlocked -> go fish
+							if typeof(spotAncientJungle) == "CFrame" and goToSpot then
+								goToSpot(spotAncientJungle)
+								task.wait(3)
+							end
+							if Rayfield.Flags[FLAG_AUTOFISHING] then Rayfield.Flags[FLAG_AUTOFISHING]:Set(true) end
+						end
+
+					---------------------------------------------------
+					-- Quest 3 — Sacred Temple SECRET fish
+					elseif not o3 then
+						if step ~= 3 then
+							step = 3
+							print("[Element Quest] Obj#3 -> cek TempleDoor & fishing Sacred Temple...")
+
+							if isTempleLocked() then
+								print("[Element Quest] TempleDoor masih LOCKED -> switch ke Artifact Quest.")
+
+								-- stop element
+								if Rayfield.Flags[FLAG_AUTOQUEST_ELEM] then Rayfield.Flags[FLAG_AUTOQUEST_ELEM]:Set(false) end
+								_G.AutoQuestElement = false
+
+								-- start artifact
+								if Rayfield.Flags[FLAG_AUTOQUEST_ART] then Rayfield.Flags[FLAG_AUTOQUEST_ART]:Set(true) end
+								_G.AutoQuestArtifact = true
+
+								-- wait unlock
+								repeat task.wait(5) until not isTempleLocked()
+
+								print("[Element Quest] TempleDoor UNLOCKED -> balik ke Element Quest.")
+
+								-- stop artifact
+								if Rayfield.Flags[FLAG_AUTOQUEST_ART] then Rayfield.Flags[FLAG_AUTOQUEST_ART]:Set(false) end
+								_G.AutoQuestArtifact = false
+
+								-- resume element
+								if Rayfield.Flags[FLAG_AUTOQUEST_ELEM] then Rayfield.Flags[FLAG_AUTOQUEST_ELEM]:Set(true) end
+								_G.AutoQuestElement = true
+
+								return
+							end
+
+							if typeof(spotSacredTemple) == "CFrame" and goToSpot then
+								goToSpot(spotSacredTemple)
+								task.wait(3)
+							end
+							if Rayfield.Flags[FLAG_AUTOFISHING] then Rayfield.Flags[FLAG_AUTOFISHING]:Set(true) end
+						end
+
+					---------------------------------------------------
+					-- Quest 4 — selesai -> Megalodon Hunt ON, stop Element
+					else
+						if step ~= 4 then
+							step = 4
+							print("[Element Quest] Obj#4 selesai / semua objective selesai -> MegalodonHunt ON, stop Element.")
+							task.wait(1)
+
+							if Rayfield.Flags[FLAG_MEGALODON_HUNT] then
+								Rayfield.Flags[FLAG_MEGALODON_HUNT]:Set(true)
+							end
+
+							if Rayfield.Flags[FLAG_AUTOQUEST_ELEM] then
+								Rayfield.Flags[FLAG_AUTOQUEST_ELEM]:Set(false)
+							end
+							_G.AutoQuestElement = false
+							return
+						end
+					end
+				end
+
+				-- Safety: while running, keep autofishing ON (kecuali saat Obj#1 deep sea handoff)
+				if _G.AutoQuestElement and Rayfield.Flags[FLAG_AUTOFISHING] and not Rayfield.Flags[FLAG_AUTOFISHING].CurrentValue then
+					Rayfield.Flags[FLAG_AUTOFISHING]:Set(true)
+				end
+
+				task.wait(2)
+			end
+		end)
+	end
 })
 
 -- =========================================================
@@ -2491,107 +2506,66 @@ QuestTab:CreateToggle({
 
 local Section = QuestTab:CreateSection("Deep Sea Quest")
 
-local QuestInfo = QuestTab:CreateParagraph({
+local QUEST_TYPE = "Mainline"
+local QUEST_ID   = "Deep Sea Quest"
+local PATH       = {"Quests", QUEST_TYPE, QUEST_ID}
+
+local QuestInfoDeepSea = QuestTab:CreateParagraph({
     Title = "Deep Sea Quest",
-    Content = "Loading quest info..."
+    Content = "Loading..."
 })
 
--- References (GUI)
-local QuestFolder = workspace["!!! DEPENDENCIES"]["QuestTrackers"]["Deep Sea Tracker"].Board.Gui.Content
-local Header = QuestFolder.Header
-local Label1 = QuestFolder.Label1
-local Label2 = QuestFolder.Label2
-local Label3 = QuestFolder.Label3
-local Label4 = QuestFolder.Label4
-local ProgressLabel = QuestFolder.Progress.ProgressLabel
-
--- Helper: cari table Quests di Data.Data.DeepSea (fleksibel)
-local function getDeepSeaQuests()
-    local DS = Data and Data.Data and Data.Data.DeepSea
-    if not DS then return nil end
-
-    -- coba beberapa path yang paling umum
-    local candidates = {
-        DS.Available and DS.Available.Forever and DS.Available.Forever.Quests,
-        DS.Available and DS.Available.Daily and DS.Available.Daily.Quests,
-        DS.Available and DS.Available.Weekly and DS.Available.Weekly.Quests,
-        DS.Quests,
-    }
-
-    for _, q in ipairs(candidates) do
-        if q ~= nil then
-            return q
-        end
+local function formatQuestText(state)
+    local def = QuestsDef[QUEST_TYPE] and QuestsDef[QUEST_TYPE][QUEST_ID]
+    if not def then
+        return ("[ElementQuest] Quest def missing: %s / %s"):format(QUEST_TYPE, QUEST_ID)
+    end
+    if not state or not state.Objectives then
+        return ("=== %s / %s ===\n(Quest belum aktif / data belum ready)"):format(QUEST_TYPE, QUEST_ID)
     end
 
-    return nil
+    local lines = {}
+    table.insert(lines, ("=== %s / %s ==="):format(QUEST_TYPE, QUEST_ID))
+
+    for i, objDef in ipairs(def.Objectives or {}) do
+        local st = state.Objectives[i] or {}
+        local progress = tonumber(st.Progress) or 0
+        local goal = tonumber(objDef.Goal) or 0
+        local done = (goal > 0) and (progress >= goal) or false
+
+        -- Ambil nama objektif (kalau ada Name / DisplayName, pakai itu)
+        local text = objDef.Name or objDef.Title or objDef.DisplayName or objDef.Type or ("Objective " .. i)
+
+        table.insert(lines, ("[%s] #%d %s (%d/%d)"):format(done and "✓" or " ", i, tostring(text), progress, goal))
+    end
+
+    return table.concat(lines, "\n")
 end
 
-local function redeemedText(Q, i)
-    if not Q then return "..." end
-    local q = Q[i] or Q[tostring(i)]
-    local r = q and q.Redeemed
-    if r == nil then return "..." end
-    return tostring(r):upper() -- TRUE / FALSE
-end
-
+-- initial update
 task.spawn(function()
-    while true do
-        pcall(function()
-            local Q = getDeepSeaQuests()
+    local state = Data:Get(PATH)
+    QuestInfoDeepSea:Set({
+        Title = QUEST_ID,
+        Content = formatQuestText(state)
+    })
+end)
 
-            QuestInfo:Set({
-                Title = Header.Text,
-                Content = string.format([[
-%s = %s
-%s = %s
-%s = %s
-%s = %s
-
-%s
-                ]],
-                Label1.Text, redeemedText(Q, 1),
-                Label2.Text, redeemedText(Q, 2),
-                Label3.Text, redeemedText(Q, 3),
-                Label4.Text, redeemedText(Q, 4),
-                ProgressLabel.Text
-                )
-            })
-        end)
-
-        RunService.task.wait(0.1)
-    end
+-- live update realtime dari replion
+Data:OnChange(PATH, function(newState)
+    QuestInfoDeepSea:Set({
+        Title = QUEST_ID,
+        Content = formatQuestText(newState)
+    })
 end)
 
 -- =========================================================
 -- Auto Quest Deep Sea (Redeemed-based)
 
-local bestSpotTreasure = CFrame.lookAt(
-    Vector3.new(-3563.683349609375, -279.07421875, -1679.2740478515625),
-    Vector3.new(-3563.683349609375, -279.07421875, -1679.2740478515625) + Vector3.new(-0.6082443, 0, 0.7937499)
-)
-
-local bestSpotSysyphus = CFrame.lookAt(
-    Vector3.new(-3764.026, -135.074, -994.416),
-    Vector3.new(-3764.026, -135.074, -994.416) + Vector3.new(0.694, 0, 0.720)
-)
-
-local function waitUntilDeepSeaRedeemed(i)
-    while _G.AutoQuestDeepSea do
-        local r = isDeepSeaRedeemed(i)
-        if r == true then return true end
-        task.wait(0.1) -- realtime-ish
-    end
-    return false
+local function isDeepSeaObjectiveDone(i)
+    return isObjectiveDone("Mainline", "Deep Sea Quest", i)
 end
 
-local function isDeepSeaRedeemed(i)
-    local Q = getDeepSeaQuests()
-    if not Q then return nil end
-    local q = Q[i] or Q[tostring(i)]
-    if not q or q.Redeemed == nil then return nil end
-    return q.Redeemed == true
-end
 
 QuestTab:CreateToggle({
     Name = "⚡ Auto Quest (Deep Sea)",
@@ -2611,10 +2585,11 @@ QuestTab:CreateToggle({
             local currentStep = 0
 
             while _G.AutoQuestDeepSea do
-                local r1 = isDeepSeaRedeemed(1)
-                local r2 = isDeepSeaRedeemed(2)
-                local r3 = isDeepSeaRedeemed(3)
-                local r4 = isDeepSeaRedeemed(4)
+                local r1 = isDeepSeaObjectiveDone(1)
+                local r2 = isDeepSeaObjectiveDone(2)
+                local r3 = isDeepSeaObjectiveDone(3)
+                local r4 = isDeepSeaObjectiveDone(4)
+
 
                 -- data belum ready
                 if r1 == nil or r2 == nil or r3 == nil or r4 == nil then
@@ -2677,7 +2652,6 @@ local rods = {
 }
 
 --// Referensi ke RemoteFunction dengan error handling
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local success, PurchaseFishingRod = pcall(function()
     return ReplicatedStorage:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/PurchaseFishingRod")
 end)
