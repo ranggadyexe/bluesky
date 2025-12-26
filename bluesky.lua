@@ -665,7 +665,7 @@ local function getMegalodonProp()
         return nil
     end
 
-    local megalodon = props:FindFirstChild("Black Hole")
+    local megalodon = props:FindFirstChild("Megalodon Hunt")
     if not megalodon then
         warn("[MegalodonFinder] Props['Megalodon Hunt'] tidak ditemukan")
         return nil
