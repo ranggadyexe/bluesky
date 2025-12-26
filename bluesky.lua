@@ -659,32 +659,27 @@ local player = game.Players.LocalPlayer
 
 --// 🎯 Fokus hanya ke Megalodon Hunt (lokasi baru: workspace.Props["Megalodon Hunt"])
 local function getMegalodonProp()
-    local props = workspace:FindFirstChild("Props")
-    if not props then
-        warn("[MegalodonFinder] Folder Props tidak ditemukan")
+    -- Cari object bernama "Megalodon Hunt" di workspace, tanpa hard index [33]
+    local megalodonObj = workspace:FindFirstChild("Megalodon Hunt", true)
+    if not megalodonObj then
+        warn("[MegalodonFinder] Tidak menemukan 'Megalodon Hunt' di workspace")
         return nil
     end
 
-    local megalodon = props:FindFirstChild("Megalodon Hunt")
-    if not megalodon then
-        warn("[MegalodonFinder] Props['Megalodon Hunt'] tidak ditemukan")
-        return nil
-    end
-
-    -- Kalau object-nya part langsung
-    if megalodon:IsA("BasePart") then
-        print("[MegalodonFinder] Ditemukan Megalodon Hunt di:", megalodon:GetFullName())
-        return megalodon.CFrame
-    end
-
-    -- Kalau dia Model/Folder, cari part di dalamnya
-    local part = megalodon:FindFirstChildWhichIsA("BasePart", true)
+    -- Ambil part pertama (BasePart) di dalamnya (kalau bentuknya model/folder)
+    local part = megalodonObj:FindFirstChildWhichIsA("BasePart", true)
     if part then
-        print("[MegalodonFinder] Ditemukan Megalodon Hunt di:", megalodon:GetFullName())
+        print("[MegalodonFinder] Ditemukan Megalodon Hunt di:", megalodonObj:GetFullName())
         return part.CFrame
     end
 
-    warn("[MegalodonFinder] Megalodon Hunt ada tapi tidak punya BasePart")
+    -- Kalau ternyata object-nya sendiri BasePart
+    if megalodonObj:IsA("BasePart") then
+        print("[MegalodonFinder] Ditemukan Megalodon Hunt (BasePart) di:", megalodonObj:GetFullName())
+        return megalodonObj.CFrame
+    end
+
+    warn("[MegalodonFinder] 'Megalodon Hunt' ditemukan tapi tidak ada BasePart di dalamnya")
     return nil
 end
 
