@@ -1906,43 +1906,76 @@ AutoTab:CreateButton({
 -- =========================================================
 -- 🎯 Config: 4 Ikan Khusus
 -- =========================================================
-local SpecialFishIds = {
-    [263] = false, --crocodile
-    [283] = true, --laba laba
-    [284] = false,
-    [270] = false,
-    [382] = false, --cute octopus
-    [558] = true, --evolved enchant stone
+local SpecialItemIds = {
+    [263] = true,  -- crocodile
+    [283] = true,  -- laba laba
+    [284] = true,
+    [270] = true,
+    [382] = true,  -- cute octopus
+    [558] = true,  -- evolved enchant stone
+}
+
+local SpecialTypesToCheck = {
+    "Fish",
+    "Enchant Stone",
+    -- tambah kalau ada: "Item", "Material", dll
 }
 
 local autoFavSpecialEnabled = false
 
+local function tryGetMeta(itemType, id)
+    local ok, meta = pcall(function()
+        return ItemUtility.GetItemDataFromItemType(itemType, id)
+    end)
+    if ok then return meta end
+    return nil
+end
+
 task.spawn(function()
     while true do
         if autoFavSpecialEnabled then
-            local items = Data.Data.Inventory.Items
-            
-            for _, info in pairs(items) do
-                if typeof(info) == "table" and info.Id and not info.Favorited then
-                    local ok, meta = pcall(function()
-                        return ItemUtility.GetItemDataFromItemType("Fish", info.Id)
-                    end)
+            local inv = Data and Data.Data and Data.Data.Inventory
+            local items = inv and inv.Items
 
-                    if ok and meta and SpecialFishIds[meta.Data.Id] then
-                        RemoteFavorite:FireServer(info.UUID)
-                        print("⭐ Auto-Favorited Special:", meta.Data.Name)
-                        task.wait(0.1)
+            if items then
+                for _, info in pairs(items) do
+                    if typeof(info) == "table" and info.Id and info.UUID and not info.Favorited then
+                        -- ✅ paling aman: cocokkan langsung pakai info.Id
+                        if SpecialItemIds[tonumber(info.Id)] then
+                            RemoteFavorite:FireServer(info.UUID)
+
+                            -- Optional: cari nama dari meta biar print enak
+                            local foundName, foundType
+
+                            for _, itemType in ipairs(SpecialTypesToCheck) do
+                                local meta = tryGetMeta(itemType, info.Id)
+                                if meta and meta.Data and meta.Data.Name then
+                                    foundName = meta.Data.Name
+                                    foundType = itemType
+                                    break
+                                end
+                            end
+
+                            print(("⭐ Auto-Favorited Special: %s (Type=%s, Id=%s)"):format(
+                                foundName or "Unknown",
+                                foundType or "Unknown",
+                                tostring(info.Id)
+                            ))
+
+                            task.wait(0.1)
+                        end
                     end
                 end
             end
         end
+
         task.wait(0.5)
     end
 end)
 
 AutoTab:CreateToggle({
-    Name = "Auto Favorite Laba Laba, Evolved Enchant Stone",
-    Flag = "AutoFav4SpecialFish",
+    Name = "Auto Favorite Laba Laba + Evolved Enchant Stone",
+    Flag = "AutoFavItemSpecial",
     CurrentValue = false,
     Callback = function(v)
         autoFavSpecialEnabled = v
