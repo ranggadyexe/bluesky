@@ -1911,7 +1911,8 @@ local SpecialFishIds = {
     [283] = true, --laba laba
     [284] = false,
     [270] = false,
-    [382] = true, --cute octopus
+    [382] = false, --cute octopus
+    [558] = true, --evolved enchant stone
 }
 
 local autoFavSpecialEnabled = false
@@ -1940,7 +1941,7 @@ task.spawn(function()
 end)
 
 AutoTab:CreateToggle({
-    Name = "Auto Favorite Laba Laba & Cute Octopus",
+    Name = "Auto Favorite Laba Laba, Evolved Enchant Stone",
     Flag = "AutoFav4SpecialFish",
     CurrentValue = false,
     Callback = function(v)
