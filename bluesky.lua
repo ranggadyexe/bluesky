@@ -1907,11 +1907,11 @@ AutoTab:CreateButton({
 -- 🎯 Config: 4 Ikan Khusus
 -- =========================================================
 local SpecialItemIds = {
-    [263] = true,  -- crocodile
+    [263] = false,  -- crocodile
     [283] = true,  -- laba laba
-    [284] = true,
-    [270] = true,
-    [382] = true,  -- cute octopus
+    [284] = false,
+    [270] = false,
+    [382] = false,  -- cute octopus
     [558] = true,  -- evolved enchant stone
 }
 
