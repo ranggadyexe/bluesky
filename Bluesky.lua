@@ -1,6 +1,9 @@
+-- Bluesky UI
+-- Created by Wade
+
 local Bluesky = {}
 
-Bluesky.Version = "0.9.1"
+Bluesky.Version = "0.9.2"
 Bluesky.Icons = {}
 Bluesky.DebugWarnings = true
 Bluesky.MissingIconWarnings = {}
