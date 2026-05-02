@@ -9,10 +9,26 @@ Bluesky.DebugWarnings = true
 Bluesky.MissingIconWarnings = {}
 Bluesky.FallbackIcon = "?"
 Bluesky.IconLibraryUrl = "https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/refs/heads/main/icons.lua"
+Bluesky.LucideUrl = "https://raw.githubusercontent.com/latte-soft/lucide-roblox/master/lucide-roblox.luau"
 Bluesky.RemoteIconsEnabled = true
+Bluesky.LucideEnabled = true
 Bluesky.SecureMode = false
 Bluesky.RayfieldIcons = nil
 Bluesky.RayfieldIconsLoaded = false
+Bluesky.LucideModule = nil
+Bluesky.LucideLoaded = false
+Bluesky.Settings = {
+	General = {
+		blueskyOpen = {Type = 'bind', Value = 'K', Name = 'Bluesky Keybind'},
+	},
+	System = {
+		usageAnalytics = {Type = 'toggle', Value = true, Name = 'Anonymous Analytics'},
+	}
+}
+Bluesky.SettingsFile = "settings.bsky"
+Bluesky._overriddenSettings = {}
+Bluesky.UseStudio = false
+Bluesky.HapticService = nil
 Bluesky.IconPresets = {
 	LucideLite = {
 		Meta = {
@@ -82,6 +98,61 @@ Bluesky.IconPresets = {
 		},
 	},
 }
+
+function Bluesky:LoadLucide()
+	if self.LucideLoaded then
+		return self.LucideModule
+	end
+	
+	if not self.LucideEnabled then
+		return nil
+	end
+	
+	local success, lucideData = pcall(function()
+		return game:HttpGet(self.LucideUrl)
+	end)
+	
+	if success and lucideData then
+		local loadSuccess, lucideModule = pcall(function()
+			return loadstring(lucideData)()
+		end)
+		
+		if loadSuccess and lucideModule then
+			self.LucideModule = lucideModule
+			self.LucideLoaded = true
+			return lucideModule
+		end
+	end
+	
+	self.LucideEnabled = false
+	return nil
+end
+
+function Bluesky:GetLucideIcon(iconName, iconSize)
+	if not self.LucideLoaded then
+		self:LoadLucide()
+	end
+	
+	if not self.LucideModule then
+		return nil
+	end
+	
+	local success, asset = pcall(function()
+		return self.LucideModule.GetAsset(iconName, iconSize or 48)
+	end)
+	
+	if success and asset then
+		return {
+			Id = asset.Id,
+			Url = asset.Url,
+			ImageRectSize = asset.ImageRectSize,
+			ImageRectOffset = asset.ImageRectOffset,
+			IconName = asset.IconName
+		}
+	end
+	
+	return nil
+end
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -378,6 +449,111 @@ local function cloneValue(value)
 	end
 	return cloned
 end
+
+function Bluesky:overrideSetting(category, name, value)
+	if type(category) ~= "string" or type(name) ~= "string" then
+		return self
+	end
+	self._overriddenSettings[category .. "." .. name] = value
+	return self
+end
+
+function Bluesky:getSetting(category, name)
+	local key = category .. "." .. name
+	if self._overriddenSettings[key] ~= nil then
+		return self._overriddenSettings[key]
+	end
+	if self.Settings and self.Settings[category] and self.Settings[category][name] then
+		return self.Settings[category][name].Value
+	end
+	return nil
+end
+
+local function loadSettings(window)
+	if not canReadFs() then
+		return
+	end
+	local path = Bluesky.SettingsFolder .. "/" .. Bluesky.SettingsFile
+	if not isfile(path) then
+		return
+	end
+	local ok, content = pcall(function()
+		return readfile(path)
+	end)
+	if not ok then
+		return
+	end
+	local okDecode, data = pcall(function()
+		return HttpService:JSONDecode(content)
+	end)
+	if not okDecode or type(data) ~= "table" then
+		return
+	end
+	for categoryName, settingCategory in pairs(data) do
+		if Bluesky.Settings[categoryName] then
+			for settingName, settingData in pairs(settingCategory) do
+				if Bluesky.Settings[categoryName][settingName] then
+					Bluesky.Settings[categoryName][settingName].Value = settingData.Value
+					if window and window.SettingsElements and window.SettingsElements[categoryName .. "." .. settingName] then
+						window.SettingsElements[categoryName .. "." .. settingName]:Set(settingData.Value)
+					end
+				end
+			end
+		end
+	end
+end
+
+local function saveSettings()
+	if not canWriteFs() then
+		return false
+	end
+	local data = {}
+	for categoryName, settingCategory in pairs(Bluesky.Settings) do
+		data[categoryName] = {}
+		for settingName, setting in pairs(settingCategory) do
+			data[categoryName][settingName] = {
+				Type = setting.Type,
+				Value = setting.Value,
+				Name = setting.Name,
+			}
+		end
+	end
+	ensureFolder(Bluesky.SettingsFolder)
+	local ok, encoded = pcall(function()
+		return HttpService:JSONEncode(data)
+	end)
+	if not ok then
+		return false
+	end
+	pcall(function()
+		writefile(Bluesky.SettingsFolder .. "/" .. Bluesky.SettingsFile, encoded)
+	end)
+	return true
+end
+
+Bluesky.SettingsFolder = "BlueskyUI"
+Bluesky.SettingsInitialized = false
+Bluesky.SettingsElements = {}
+
+local function checkStudioMode()
+	local ok, result = pcall(function()
+		return game:GetService("RunService"):IsStudio()
+	end)
+	Bluesky.UseStudio = ok and result or false
+end
+
+checkStudioMode()
+
+local function checkHaptic()
+	local ok, service = pcall(function()
+		return game:GetService("HapticService")
+	end)
+	if ok then
+		Bluesky.HapticService = service
+	end
+end
+
+checkHaptic()
 
 local function copyTheme(overrides)
 	local theme = {}
@@ -1351,6 +1527,19 @@ function Bluesky:_resolveIcon(icon)
 			end
 		end
 
+		if self.LucideEnabled then
+			local lucideAsset = self:GetLucideIcon(icon, 48)
+			if lucideAsset then
+				return {
+					Kind = "lucide",
+					Value = lucideAsset.Url,
+					RectOffset = lucideAsset.ImageRectOffset,
+					RectSize = lucideAsset.ImageRectSize,
+					Color = Color3.fromRGB(255, 255, 255),
+				}
+			end
+		end
+
 		local fallbackIcons = self.IconPresets
 			and self.IconPresets.LucideLite
 			and self.IconPresets.LucideLite.Icons
@@ -1378,7 +1567,7 @@ local function mountIcon(library, parent, icon, theme, size, layoutOrder)
 		return nil
 	end
 
-	if (resolved.Kind == "image" or resolved.Kind == "atlas") and resolved.Value then
+	if (resolved.Kind == "image" or resolved.Kind == "atlas" or resolved.Kind == "lucide") and resolved.Value then
 		local image = create("ImageLabel", {
 			BackgroundTransparency = 1,
 			Image = resolved.Value,
@@ -1389,6 +1578,9 @@ local function mountIcon(library, parent, icon, theme, size, layoutOrder)
 		})
 
 		if resolved.Kind == "atlas" then
+			image.ImageRectOffset = resolved.RectOffset
+			image.ImageRectSize = resolved.RectSize
+		elseif resolved.Kind == "lucide" then
 			image.ImageRectOffset = resolved.RectOffset
 			image.ImageRectSize = resolved.RectSize
 		end
@@ -3229,6 +3421,254 @@ local function createWindowGui(config, theme)
 	return gui, main, topbar, body, tabList, contentHolder, notifications, minimize, maximize, close, minimizedButton, resizeHandle, navigationStyle, searchBox, sidebar, responsive
 end
 
+function promptDiscordInvite(discordConfig)
+	if type(discordConfig) ~= "table" or not discordConfig.Enabled then
+		return
+	end
+
+	local player = game:GetService("Players").LocalPlayer
+	if not player then
+		return
+	end
+
+	local joinData = discordConfig._joinData
+	if not joinData then
+		joinData = player:FindFirstChild("BlueskyDiscordJoin")
+		if joinData then
+			discordConfig._joinData = joinData
+		end
+	end
+
+	if discordConfig.RememberJoins ~= false then
+		if joinData and joinData.Value == true then
+			return
+		end
+	end
+
+	local inviteCode = tostring(discordConfig.Invite or "")
+	if inviteCode == "" or inviteCode == "noinvitelink" then
+		return
+	end
+
+	task.delay(1, function()
+		local Bluesky = _G.Bluesky or Bluesky
+		if not Bluesky.CurrentWindow then
+			return
+		end
+
+		local window = Bluesky.CurrentWindow
+		local theme = window.Theme
+
+		local dialog = window:Confirm({
+			Title = "Join Discord",
+			Content = "Would you like to join our Discord server for updates and support?",
+			ConfirmText = "Join",
+			CancelText = "Maybe Later",
+			ConfirmColor = Color3.fromRGB(88, 101, 242),
+		})
+
+		if dialog then
+			dialog.Confirmed:Connect(function()
+				pcall(function()
+					if setclipboard then
+						setclipboard("https://discord.gg/" .. inviteCode)
+					end
+
+					if not joinData then
+						joinData = Instance.new("BoolValue")
+						joinData.Name = "BlueskyDiscordJoin"
+						joinData.Value = true
+						joinData.Parent = player
+						discordConfig._joinData = joinData
+					else
+						joinData.Value = true
+					end
+				end)
+			end)
+		end
+	end)
+end
+
+function createKeyGate(window, keyConfig)
+	if type(keyConfig) ~= "table" or not keyConfig.Enabled then
+		return
+	end
+
+	local theme = window.Theme
+	local gui = window.Gui
+	local player = game:GetService("Players").LocalPlayer
+
+	local keyFileName = tostring(keyConfig.FileName or "BlueskyKey")
+	local saveKey = keyConfig.SaveKey ~= false
+	local grabFromSite = keyConfig.GrabKeyFromSite == true
+	local keys = keyConfig.Key or {}
+	local note = tostring(keyConfig.Note or "No method of obtaining the key is provided")
+
+	local savedKey = nil
+	if saveKey and isfile and isfile(keyFileName) then
+		pcall(function()
+			savedKey = readfile(keyFileName)
+		end)
+	end
+
+	if savedKey and savedKey ~= "" then
+		local validKey = false
+		for _, key in ipairs(keys) do
+			if type(key) == "string" and key == savedKey then
+				validKey = true
+				break
+			end
+		end
+
+		if grabFromSite and not validKey then
+			pcall(function()
+				local fetchedKey = game:HttpGet(savedKey)
+				if fetchedKey then
+					fetchedKey = fetchedKey:gsub("%s+", "")
+					for _, key in ipairs(keys) do
+						if type(key) == "string" and key == fetchedKey then
+							validKey = true
+							break
+						end
+					end
+				end
+			end)
+		end
+
+		if validKey then
+			return
+		end
+	end
+
+	local keyGate = create("Frame", {
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.3,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 1000,
+		Parent = gui,
+	})
+
+	local keyContainer = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = theme.Surface,
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(320, 200),
+		ZIndex = 1001,
+		Parent = keyGate,
+	})
+	corner(keyContainer, 12)
+	stroke(keyContainer, theme.Stroke, 0.5)
+
+	local title = makeText(keyContainer, keyConfig.Title or "Key System", 18, theme.Text, {
+		Font = Enum.Font.GothamBold,
+		Position = UDim2.new(0, 20, 0, 16),
+		Size = UDim2.new(1, -40, 0, 24),
+		ZIndex = 1002,
+	})
+
+	local subtitle = makeText(keyContainer, keyConfig.Subtitle or "Enter Key", 14, theme.SubText, {
+		Position = UDim2.new(0, 20, 0, 44),
+		Size = UDim2.new(1, -40, 0, 20),
+		ZIndex = 1002,
+	})
+
+	local noteLabel = makeText(keyContainer, note, 12, theme.SubText, {
+		Position = UDim2.new(0, 20, 0, 70),
+		Size = UDim2.new(1, -40, 0, 40),
+		TextWrapped = true,
+		ZIndex = 1002,
+	})
+
+	local keyInput = create("TextBox", {
+		BackgroundColor3 = theme.Item,
+		BorderSizePixel = 0,
+		Font = Enum.Font.Gotham,
+		PlaceholderColor3 = theme.SubText,
+		PlaceholderText = "Enter your key...",
+		Position = UDim2.new(0, 20, 0, 120),
+		Size = UDim2.new(1, -40, 0, 36),
+		Text = "",
+		TextColor3 = theme.Text,
+		TextSize = 14,
+		ZIndex = 1002,
+		Parent = keyContainer,
+	})
+	corner(keyInput, 8)
+	stroke(keyInput, theme.Stroke, 0.3)
+
+	local errorLabel = makeText(keyContainer, "", 12, theme.Danger, {
+		Position = UDim2.new(0, 20, 0, 162),
+		Size = UDim2.new(1, -40, 0, 16),
+		Visible = false,
+		ZIndex = 1002,
+	})
+
+	local submitBtn = create("TextButton", {
+		BackgroundColor3 = theme.Accent,
+		BorderSizePixel = 0,
+		Font = Enum.Font.GothamBold,
+		Position = UDim2.new(0, 20, 1, -44),
+		Size = UDim2.new(1, -40, 0, 36),
+		Text = "Submit",
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextSize = 14,
+		ZIndex = 1002,
+		Parent = keyContainer,
+	})
+	corner(submitBtn, 8)
+
+	local function validateKey(inputKey)
+		local trimmedKey = inputKey:gsub("%s+", "")
+
+		for _, key in ipairs(keys) do
+			if type(key) == "string" then
+				if grabFromSite and (key:match("^https?://") or key:match("^rbxasset")) then
+					local success, fetchedKey = pcall(function()
+						return game:HttpGet(key)
+					end)
+					if success and fetchedKey then
+						fetchedKey = fetchedKey:gsub("%s+", "")
+						if fetchedKey == trimmedKey then
+							return true
+						end
+					end
+				elseif key == trimmedKey then
+					return true
+				end
+			end
+		end
+		return false
+	end
+
+	submitBtn.MouseButton1Click:Connect(function()
+		local inputKey = keyInput.Text
+		if inputKey == "" then
+			errorLabel.Text = "Please enter a key"
+			errorLabel.Visible = true
+			return
+		end
+
+		if validateKey(inputKey) then
+			if saveKey and writefile then
+				pcall(function()
+					writefile(keyFileName, inputKey)
+				end)
+			end
+			keyGate:Destroy()
+		else
+			errorLabel.Text = "Invalid key"
+			errorLabel.Visible = true
+		end
+	end)
+
+	keyInput.FocusLost:Connect(function(enterPressed)
+		if enterPressed then
+			submitBtn.MouseButton1Click:Fire()
+		end
+	end)
+end
+
 function Bluesky:CreateWindow(config)
 	if self ~= Bluesky and config == nil then
 		config = self
@@ -3268,6 +3708,7 @@ function Bluesky:CreateWindow(config)
 	config.ConfigurationSaving = ensureType(config.ConfigurationSaving, "table", "CreateWindow.ConfigurationSaving", config.ConfigurationSaving)
 	config.Discord = ensureType(config.Discord, "table", "CreateWindow.Discord", config.Discord)
 	config.KeySettings = ensureType(config.KeySettings, "table", "CreateWindow.KeySettings", config.KeySettings)
+	config.DisableBuildWarnings = config.DisableBuildWarnings or config.DisableRayfieldPrompts or false
 	local secureGlobal = readGlobalFlag("BLUESKY_SECURE") == true
 	local assetMode = type(config.AssetMode) == "string" and string.lower(config.AssetMode) or ""
 	local hasSecureConfig = config.SecureMode ~= nil or config.Secure ~= nil or assetMode ~= ""
@@ -3602,9 +4043,16 @@ function Bluesky:CreateWindow(config)
 		createKeyGate(window, config)
 	end
 
+	Bluesky.CurrentWindow = window
+
 	promptDiscordInvite(config.Discord)
 
-	Bluesky.CurrentWindow = window
+	if not config.DisableBuildWarnings and not config.DisableRayfieldPrompts then
+		if Bluesky.Version and config.ConfigurationSaving and config.ConfigurationSaving.Enabled then
+			devWarn("Bluesky version " .. Bluesky.Version .. " loaded with config saving enabled")
+		end
+	end
+
 	return window
 end
 
@@ -6390,6 +6838,169 @@ function HostMethods:CreateKeybind(options)
 	end)
 
 	return attachControlBase(control, item)
+end
+
+function HostMethods:CreateSettings(options)
+	options = normalizeOptions(options, "Settings")
+	local window = self._window
+	local theme = window.Theme
+
+	local host = options.Inline == true and self or self:CreateSection({
+		Name = options.Name or "Settings",
+		Icon = options.Icon or "settings",
+		Collapsible = options.Collapsible,
+	})
+
+	Bluesky.SettingsElements = Bluesky.SettingsElements or {}
+	local generatedControls = {}
+
+	local control = {
+		Instance = host._section or host._container,
+	}
+
+	for categoryName, settingCategory in pairs(Bluesky.Settings) do
+		for settingName, setting in pairs(settingCategory) do
+			local fullName = categoryName .. "." .. settingName
+			local settingType = setting.Type
+
+			if settingType == "bind" then
+				local keybind = host:CreateKeybind({
+					Name = setting.Name or settingName,
+					CurrentValue = parseKeyCode(setting.Value),
+					Flag = "settings_" .. fullName,
+					Callback = function(keyCode)
+						Bluesky.Settings[categoryName][settingName].Value = tostring(keyCode.Name):upper()
+						saveSettings()
+					end,
+				})
+				Bluesky.SettingsElements[fullName] = keybind
+				table.insert(generatedControls, keybind)
+
+			elseif settingType == "toggle" then
+				local toggle = host:CreateToggle({
+					Name = setting.Name or settingName,
+					CurrentValue = setting.Value == true,
+					Flag = "settings_" .. fullName,
+					Callback = function(value)
+						Bluesky.Settings[categoryName][settingName].Value = value
+						saveSettings()
+					end,
+				})
+				Bluesky.SettingsElements[fullName] = toggle
+				table.insert(generatedControls, toggle)
+			end
+		end
+	end
+
+	function control:Refresh()
+		for fullName, element in pairs(Bluesky.SettingsElements) do
+			local parts = {}
+			for part in string.gmatch(fullName, "[^%.]+") do
+				table.insert(parts, part)
+			end
+			if #parts == 2 then
+				local categoryName = parts[1]
+				local settingName = parts[2]
+				local setting = Bluesky.Settings[categoryName] and Bluesky.Settings[categoryName][settingName]
+				if setting then
+					if setting.Type == "bind" then
+						element:Set(parseKeyCode(setting.Value))
+					elseif setting.Type == "toggle" then
+						element:Set(setting.Value == true)
+					end
+				end
+			end
+		end
+		return self
+	end
+
+	function control:Destroy()
+		for _, childControl in ipairs(generatedControls) do
+			if childControl and type(childControl.Destroy) == "function" then
+				childControl:Destroy()
+			end
+		end
+		if options.Inline ~= true and host and type(host.Destroy) == "function" then
+			host:Destroy()
+		elseif self.Instance then
+			self.Instance:Destroy()
+		end
+	end
+
+	return attachControlBase(control, control.Instance)
+end
+
+function WindowMethods:_makeDraggable(handle, target)
+	target = target or self.Main
+
+	local dragging = false
+	local dragInput = nil
+	local dragStart = nil
+	local startPosition = nil
+	local dragMaid = nil
+	local enableHaptic = Bluesky.HapticService ~= nil and UserInputService.TouchEnabled
+
+	local function doHaptic(duration)
+		if enableHaptic then
+			pcall(function()
+				Bluesky.HapticService:Vibrate(duration or 0.5)
+			end)
+		end
+	end
+
+	self:_connect(handle.InputBegan, function(input)
+		if not isInputStart(input) then
+			return
+		end
+
+		if dragMaid then
+			dragMaid:Cleanup()
+		end
+
+		dragging = true
+		dragStart = input.Position
+		startPosition = target.Position
+
+		dragMaid = createMaid()
+		dragMaid:Give(input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				local shouldSave = dragging
+				dragging = false
+				if dragMaid then
+					dragMaid:Cleanup()
+					dragMaid = nil
+				end
+				doHaptic(0.3)
+				if shouldSave and self._queueWindowStateSave then
+					self:_queueWindowStateSave()
+				end
+			end
+		end))
+
+		doHaptic(0.5)
+	end)
+
+	self:_connect(handle.InputChanged, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch
+		then
+			dragInput = input
+		end
+	end)
+
+	self:_connect(UserInputService.InputChanged, function(input)
+		if input ~= dragInput or not dragging then
+			return
+		end
+
+		local delta = input.Position - dragStart
+		target.Position = UDim2.new(
+			startPosition.X.Scale,
+			startPosition.X.Offset + delta.X,
+			startPosition.Y.Scale,
+			startPosition.Y.Offset + delta.Y
+		)
+	end)
 end
 
 return Bluesky
